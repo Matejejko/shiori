@@ -1,5 +1,6 @@
 import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
 import { formPatch } from '../lib/library.js';
+import { DEFAULT_LABELS } from '../lib/labels.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { lib: null, covers: {}, st: null };
@@ -37,10 +38,10 @@ function renderSyncPill() {
 }
 
 const distinct = (arr) => [...new Set(arr)].sort((a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b))));
-function knownKeys(kind) {
+function knownKeys(kind, withDefaults = false) {
   const fromEntries = state.lib.entries.flatMap((e) => (kind === 'tag' ? (Array.isArray(e.tags) ? e.tags : []) : e[kind] !== undefined ? [e[kind]] : []));
   const fromLabels = Object.entries(state.lib.labels?.[kind] || {}).filter(([, v]) => v && v.name).map(([k]) => Number(k));
-  const base = kind === 'folder' ? [1, 2, 4] : [];
+  const base = kind === 'folder' || withDefaults ? Object.keys(DEFAULT_LABELS[kind]).map(Number) : [];
   return distinct([...base, ...fromEntries, ...fromLabels].filter((x) => typeof x === 'number' && Number.isFinite(x)));
 }
 const labelFor = (kind, v) => labelName(state.lib.labels, kind, v) || (kind === 'folder' ? `Folder ${v}` : kind === 'type' ? `Type ${v}` : `Tag ${v}`);
@@ -127,7 +128,7 @@ function openEditor(id) {
     url: h('input', { type: 'url', value: e.url || '', placeholder: urls.series || 'https://…' }),
     folder: h('select', {}, knownKeys('folder').map((v) => h('option', { value: v, text: labelFor('folder', v), selected: v === e.folder }))),
     type: h('select', {}, h('option', { value: '', text: '(none)' }), knownKeys('type').map((v) => h('option', { value: v, text: labelFor('type', v), selected: v === e.type }))),
-    tags: h('select', { multiple: true, attrs: { size: 5 } }, knownKeys('tag').map((v) => h('option', { value: v, text: labelFor('tag', v), selected: Array.isArray(e.tags) && e.tags.includes(v) }))),
+    tags: h('select', { multiple: true, attrs: { size: 8 } }, knownKeys('tag', true).map((v) => h('option', { value: v, text: labelFor('tag', v), selected: Array.isArray(e.tags) && e.tags.includes(v) }))),
     newTag: h('input', { type: 'number', step: 1, placeholder: 'new tag #' }),
     score: h('input', { type: 'number', step: 'any', value: numOrEmpty(e.score) }),
     startTs: h('input', { type: 'date', value: toDateInput(e.startTs) }),

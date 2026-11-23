@@ -64,7 +64,7 @@ async function renderCurrent(lib, covers) {
     const supported = !!(cur.match && cur.match.siteId);
     const name = h('input', { type: 'text', placeholder: 'Name (leave empty: taken from the page)', attrs: { 'aria-label': 'Name' }, class: 'grow' });
     const folder = h('select', { attrs: { 'aria-label': 'Folder' } },
-      [1, 2, 4].map((f) => h('option', { value: f, text: folderName(lib.labels, f) })));
+      [1, 2, 3, 4, 5].map((f) => h('option', { value: f, text: folderName(lib.labels, f) })));
     const status = h('span', { class: 'muted small' });
     const btn = h('button', { type: 'submit', text: 'Pin series' });
     box.append(

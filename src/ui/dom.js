@@ -1,3 +1,4 @@
+import { DEFAULT_LABELS } from '../lib/labels.js';
 // Safe DOM construction. Entry data (names, URLs) comes from websites: it only ever goes
 // into textContent / validated attributes — never innerHTML.
 
@@ -83,7 +84,7 @@ export function coverUrl(key, b64) {
 
 export function labelName(labels, kind, value) {
   const l = labels && labels[kind] && labels[kind][String(value)];
-  return l && l.name ? l.name : null;
+  return (l && l.name) || DEFAULT_LABELS[kind]?.[value] || null;
 }
 
 export function folderName(labels, f) {

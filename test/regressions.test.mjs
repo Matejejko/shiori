@@ -156,3 +156,12 @@ test('the app token is never sent over plain http to another machine', () => {
   assert.throws(() => new WebDav({ url: 'http://192.168.0.101/remote.php/webdav/', user: 'u', token: 't' }), /https/);
   assert.ok(new WebDav({ url: 'http://127.0.0.1:9200/remote.php/webdav/', user: 'u', token: 't' }));
 });
+
+test('built-in names for folders and MangaPin tags; your own labels win', async () => {
+  const { labelName } = await import('../src/ui/dom.js');
+  assert.equal(labelName(null, 'folder', 2), 'Hiatus');
+  assert.equal(labelName(null, 'tag', 81), 'Fantasy');
+  assert.equal(labelName({ tag: { 81: { name: 'Fantasy!', ts: 1 } } }, 'tag', 81), 'Fantasy!');
+  assert.equal(labelName({ tag: { 81: { name: '', ts: 1 } } }, 'tag', 81), 'Fantasy'); // removed label -> default again
+  assert.equal(labelName(null, 'tag', 99999), null);
+});
