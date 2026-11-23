@@ -16,19 +16,24 @@
       <button type="button" role="tab" data-tab="settings" class="tab">Settings</button>
       <button type="button" role="tab" data-tab="labels" class="tab">Labels</button>
     </nav>
-    <span id="sync" class="pill off">…</span>
-    <button id="syncNow" type="button" class="ghost">Sync now</button>
+    <div class="syncbox">
+      <span id="sync" class="pill off">…</span>
+      <button id="syncNow" type="button" class="ghost">Sync now</button>
+    </div>
   </header>
 
   <main>
     <section id="tab-library" class="pane">
       <div class="toolbar">
-        <input id="q" type="search" placeholder="Search name or site…" aria-label="Search">
-        <select id="fFolder" aria-label="Folder filter"></select>
-        <select id="fType" aria-label="Type filter"></select>
-        <details id="fTag" class="tagpick filter"><summary>Any tag</summary><div class="opts" aria-label="Tag filter"></div></details>
-        <select id="fSite" aria-label="Site filter"></select>
-        <label class="check"><input id="fUnread" type="checkbox"> unread</label>
+        <input id="q" class="search" type="search" placeholder="Search name or site…" aria-label="Search">
+        <div class="filters">
+          <select id="fFolder" aria-label="Folder filter"></select>
+          <select id="fType" aria-label="Type filter"></select>
+          <details id="fTag" class="tagpick filter"><summary>Any tag</summary><div class="opts" aria-label="Tag filter"></div></details>
+          <select id="fSite" aria-label="Site filter"></select>
+          <label class="check"><input id="fUnread" type="checkbox"> Unread only</label>
+        </div>
+        <div class="viewctl">
         <select id="sort" aria-label="Sort">
           <option value="updated">Recently updated</option>
           <option value="name">Name</option>
@@ -38,6 +43,7 @@
         </select>
         <span id="count" class="muted small"></span>
         <button id="checkAll" type="button" class="ghost" title="Check releases for the release folder now">Check releases</button>
+        </div>
       </div>
       <div id="grid" class="grid"></div>
     </section>

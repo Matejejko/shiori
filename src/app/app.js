@@ -103,16 +103,18 @@ function renderGrid() {
     const n = unreadBy(e);
     const err = state.lib.relerr?.[e.id];
     grid.append(h('button', { type: 'button', class: 'tile', on: { click: () => openEditor(e.id) }, attrs: { title: e.name } },
-      url ? h('img', { class: 'art', src: url, attrs: { alt: '', loading: 'lazy' } }) : h('div', { class: 'art' }),
-      h('div', { class: 'meta' },
+      h('span', { class: 'spine' },
+        url ? h('img', { class: 'art', src: url, attrs: { alt: '', loading: 'lazy' } }) : h('span', { class: 'art tone', text: e.name, attrs: { 'aria-hidden': 'true' } }),
+        n > 0 ? h('span', { class: 'badge obi', text: `+${fmtChap(n)}` }) : null),
+      h('span', { class: 'meta' },
         h('span', { class: 'name', text: e.name }),
-        h('span', { class: 'muted small', text: `${e.siteId} · ${labelFor('folder', e.folder)}` }),
-        h('span', { class: 'small', text: typeof e.progress?.chap === 'number' ? `Read ${fmtChap(e.progress.chap)} / ${fmtChap(e.latest?.chap)}` : `Not started${typeof e.latest?.chap === 'number' ? ` · ${fmtChap(e.latest.chap)} ch` : ''}` }),
-        n > 0 ? h('span', { class: 'badge', text: `+${fmtChap(n)}` }) : null,
-        err ? h('span', { class: 'small err-text', text: 'check failed', attrs: { title: err.error } }) : null,
+        h('span', { class: 'line' }, h('span', { class: 'site', text: e.siteId }), h('span', { class: 'folder', text: labelFor('folder', e.folder) })),
+        typeof e.progress?.chap === 'number' && typeof e.latest?.chap === 'number' ? h('progress', { attrs: { max: e.latest.chap, value: Math.min(e.progress.chap, e.latest.chap), 'aria-hidden': 'true' } }) : null,
+        h('span', { class: 'small read', text: typeof e.progress?.chap === 'number' ? `Read ${fmtChap(e.progress.chap)} / ${fmtChap(e.latest?.chap)}` : `Not started${typeof e.latest?.chap === 'number' ? ` · ${fmtChap(e.latest.chap)} ch` : ''}` }),
+        err ? h('span', { class: 'small err-text chip', text: 'check failed', attrs: { title: err.error } }) : null,
       )));
   }
-  if (!list.length) grid.append(h('p', { class: 'muted', text: state.lib.entries.length ? 'No series match the filters.' : 'Library is empty — import a MangaPin export or pin a series from the popup.' }));
+  if (!list.length) grid.append(h('p', { class: 'muted empty', text: state.lib.entries.length ? 'No series match the filters.' : 'Library is empty — import a MangaPin export or pin a series from the popup.' }));
 }
 
 for (const id of ['q', 'fFolder', 'fType', 'fTag', 'fSite', 'fUnread', 'sort']) $(id).addEventListener('input', renderGrid);
@@ -164,7 +166,7 @@ function openEditor(id) {
   const msg = h('span', { class: 'small' });
   const seriesLink = safeHttpUrl(e.url || urls.series);
   const nextLink = safeHttpUrl(urls.next);
-  dlg.append(h('form', { class: 'stack', attrs: { method: 'dialog' }, on: { submit: async (ev) => {
+  dlg.append(h('form', { class: 'editor', attrs: { method: 'dialog' }, on: { submit: async (ev) => {
     ev.preventDefault();
     try {
       if (f.url.value.trim() && !safeHttpUrl(f.url.value.trim())) throw new Error('URL must start with http(s)://');
@@ -179,31 +181,55 @@ function openEditor(id) {
       await load();
     } catch (err) { msg.textContent = err.message; msg.className = 'small err-text'; }
   } } },
-    h('div', { class: 'row' },
-      e.img && state.covers[e.img] ? h('img', { class: 'cover', src: coverUrl(e.img, state.covers[e.img]), attrs: { alt: '' } }) : h('div', { class: 'cover' }),
-      h('div', { class: 'grow stack' },
-        h('div', { class: 'title', text: e.name }),
-        h('div', { class: 'muted small', text: `${e.siteId} / ${e.slug}` }),
-        h('div', { class: 'small', text: `Read ${fmtChap(e.progress?.chap)} · latest ${fmtChap(e.latest?.chap)}${e.latest?.ts ? ` (${ago(e.latest.ts)})` : ''}` }),
-        h('div', { class: 'row tight' },
-          seriesLink ? h('a', { href: seriesLink, text: 'Open series', target: '_blank', rel: 'noopener noreferrer' }) : null,
-          nextLink ? h('a', { href: nextLink, text: `Next: ch ${fmtChap(e.next?.chap)}`, target: '_blank', rel: 'noopener noreferrer' }) : null),
+    // details view (default) — "Edit details" switches the same dialog into the form
+    h('div', { class: 'ed-head' },
+      h('span', { class: 'ed-cover' },
+        e.img && state.covers[e.img] ? h('img', { class: 'cover', src: coverUrl(e.img, state.covers[e.img]), attrs: { alt: '' } }) : h('span', { class: 'cover tone' }),
+        unreadBy(e) > 0 ? h('span', { class: 'badge obi', text: `+${fmtChap(unreadBy(e))}` }) : null),
+      h('div', { class: 'ed-info' },
+        h('h2', { class: 'ed-title', text: e.name }),
+        h('div', { class: 'line' },
+          h('span', { class: 'chip site', text: e.siteId }),
+          h('span', { class: 'chip', text: labelFor('folder', e.folder) }),
+          e.type !== undefined ? h('span', { class: 'chip', text: labelFor('type', e.type) }) : null),
+        h('div', { class: 'ed-progress' },
+          h('span', { class: 'stat' }, h('span', { class: 'num big', text: fmtChap(e.progress?.chap) }), h('span', { class: 'of', text: `of ${fmtChap(e.latest?.chap)}` })),
+          typeof e.progress?.chap === 'number' && typeof e.latest?.chap === 'number' ? h('progress', { attrs: { max: e.latest.chap, value: Math.min(e.progress.chap, e.latest.chap), 'aria-hidden': 'true' } }) : null,
+          h('span', { class: 'muted small', text: `Read ${fmtChap(e.progress?.chap)} · latest ${fmtChap(e.latest?.chap)}${e.latest?.ts ? ` (${ago(e.latest.ts)})` : ''}` })),
+        h('div', { class: 'row tight ed-links' },
+          nextLink ? h('a', { class: 'btn', href: nextLink, text: `Continue: ch ${fmtChap(e.next?.chap)}`, target: '_blank', rel: 'noopener noreferrer' }) : null,
+          seriesLink ? h('a', { class: nextLink ? 'btn ghost' : 'btn', href: seriesLink, text: 'Open series', target: '_blank', rel: 'noopener noreferrer' }) : null),
       )),
-    h('div', { class: 'form-grid' },
-      h('label', { class: 'full' }, 'Name', f.name),
-      h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url),
-      h('label', {}, 'Folder', f.folder),
-      h('label', {}, 'Type', f.type),
-      h('div', { class: 'full' }, h('div', { text: 'Tags' }), f.tags),
-      h('label', {}, 'Add tag number', f.newTag),
-      h('label', {}, 'Score', f.score),
-      h('label', {}, 'Progress (chapter)', f.progress),
-      h('label', {}, 'Started', f.startTs),
-      h('label', {}, 'Finished', f.endTs),
-    ),
-    h('div', { class: 'row tight' },
-      h('button', { type: 'submit', text: 'Save' }),
-      h('button', { type: 'button', class: 'ghost', text: 'Check releases', on: { click: async () => {
+    h('div', { class: 'ed-view' },
+      Array.isArray(e.tags) && e.tags.length ? h('div', { class: 'tags' }, e.tags.map((t) => h('span', { class: 'chip', text: labelFor('tag', t) }))) : h('p', { class: 'muted small', text: 'No tags yet.' }),
+      h('dl', { class: 'facts' },
+        h('dt', { text: 'Score' }), h('dd', { text: e.score ?? '–' }),
+        h('dt', { text: 'Started' }), h('dd', { text: e.startTs ? new Date(e.startTs).toLocaleDateString() : '–' }),
+        h('dt', { text: 'Finished' }), h('dd', { text: e.endTs ? new Date(e.endTs).toLocaleDateString() : '–' }),
+        h('dt', { text: 'Source' }), h('dd', { class: 'muted', text: `${e.siteId} / ${e.slug}` }))),
+    h('div', { class: 'ed-body' },
+      h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Reading' }),
+        h('label', {}, 'Progress (chapter)', f.progress),
+        h('label', {}, 'Score', f.score),
+        h('label', {}, 'Started', f.startTs),
+        h('label', {}, 'Finished', f.endTs)),
+      h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Shelf' }),
+        h('label', {}, 'Folder', f.folder),
+        h('label', {}, 'Type', f.type),
+        h('div', { class: 'full' }, h('div', { class: 'lbl', text: 'Tags' }), f.tags),
+        h('label', {}, 'Add tag number', f.newTag)),
+      h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Series' }),
+        h('label', { class: 'full' }, 'Name', f.name),
+        h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url))),
+    h('div', { class: 'ed-foot' },
+      h('div', { class: 'row tight' },
+        h('button', { type: 'button', class: 'danger quiet edit-only', text: 'Delete', on: { click: async () => {
+        if (!confirm(`Delete “${e.name}” from the library? This syncs to your other devices.`)) return;
+        await send('remove', { id });
+        dlg.close();
+        await load();
+      } } }),
+        h('button', { type: 'button', class: 'ghost view-only', text: 'Check releases', on: { click: async () => {
         msg.textContent = 'Checking…';
         try {
           const r = await send('checkReleases', { ids: [id], force: true });
@@ -211,15 +237,13 @@ function openEditor(id) {
           await load();
         } catch (err) { msg.textContent = err.message; }
       } } }),
-      h('button', { type: 'button', class: 'ghost', text: 'Cancel', on: { click: () => dlg.close() } }),
-      h('button', { type: 'button', class: 'danger', text: 'Delete', on: { click: async () => {
-        if (!confirm(`Delete “${e.name}” from the library? This syncs to your other devices.`)) return;
-        await send('remove', { id });
-        dlg.close();
-        await load();
-      } } }),
-      msg),
+        msg),
+      h('div', { class: 'row tight' },
+        h('button', { type: 'button', class: 'ghost', text: 'Close', on: { click: () => dlg.close() } }),
+        h('button', { type: 'button', class: 'edit-toggle view-only', text: 'Edit details', on: { click: () => { dlg.classList.add('editing'); f.progress.focus(); } } }),
+        h('button', { type: 'submit', class: 'edit-only', text: 'Save' }))),
   ));
+  dlg.classList.remove('editing'); // always open on the details view
   dlg.showModal();
 }
 
@@ -374,7 +398,7 @@ function labelRow(kind, key, name) {
   return h('div', { class: 'row tight' },
     h('input', { class: 'key', type: 'number', step: 1, value: key, attrs: { 'aria-label': `${kind} number` } }),
     h('input', { class: 'grow', type: 'text', value: name, placeholder: 'name', attrs: { 'aria-label': `${kind} name` } }),
-    h('button', { type: 'button', class: 'ghost', text: '✕', attrs: { 'aria-label': 'remove' }, on: { click: (ev) => ev.target.closest('.row').remove() } }));
+    h('button', { type: 'button', class: 'ghost icon', text: '✕', attrs: { 'aria-label': 'remove' }, on: { click: (ev) => ev.target.closest('.row').remove() } }));
 }
 let labelsBase = { folder: {}, type: {}, tag: {} }; // names as rendered: only changes are saved
 function renderLabels() {

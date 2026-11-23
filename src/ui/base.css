@@ -1,32 +1,117 @@
+/* Shiori — "Obi": covers on cool paper, aizome-indigo actions, one signal-yellow band for
+   what's new, screentone for missing covers. Tokens + shared components. */
 :root {
-  --bg: #f7f5f2; --panel: #ffffff; --ink: #1f1d1a; --muted: #6b665e; --line: #e3ded6;
-  --accent: #c2410c; --accent-ink: #ffffff; --ok: #15803d; --err: #b91c1c; --warn: #a16207;
+  --paper: #EEF0F4; --sheet: #FFFFFF; --ink: #171A21; --ink-2: #555C6B;
+  --line: #D5D9E1; --edge: #7C8494;
+  --ai: #2C47A3; --ai-ink: #FFFFFF; --ai-soft: #E3E8F7;
+  --obi: #FFD23F; --obi-ink: #171A21;
+  --ok: #1A7542; --err: #B3261E; --warn: #835400;
+  --tone: #C9CED8;
+  --shadow-float: 0 16px 40px rgb(16 19 26 / .22);
+  --r-cover: 3px; --r-ctl: 6px; --r-float: 12px;
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
+  --ctl-h: 34px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans", "Hiragino Sans", "Noto Sans CJK JP", "Apple SD Gothic Neo", sans-serif;
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #171614; --panel: #22201d; --ink: #ece8e1; --muted: #a39d93; --line: #37332e; --accent: #f97316; --accent-ink: #1b1209; --ok: #4ade80; --err: #f87171; --warn: #facc15; }
+  :root {
+    --paper: #151821; --sheet: #1D212B; --ink: #E7E9EF; --ink-2: #A4ABB9;
+    --line: #2C313D; --edge: #6E7688;
+    --ai: #93A8FF; --ai-ink: #121521; --ai-soft: #262D45;
+    --ok: #5FD08F; --err: #FF8B82; --warn: #EDBE52;
+    --tone: #343A48;
+    --shadow-float: 0 16px 40px rgb(0 0 0 / .5);
+  }
 }
+
 * { box-sizing: border-box; }
-html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.45 var(--font); }
 button, input, select, textarea { font: inherit; color: inherit; }
-button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
-button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-button.danger { background: var(--err); color: #fff; }
-button:disabled { opacity: .55; cursor: default; }
-input, select, textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; }
-input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-a { color: inherit; }
-.muted { color: var(--muted); }
+h2 { font-size: 16px; font-weight: 600; margin: 0; letter-spacing: -.005em; }
+
+/* controls */
+button {
+  min-height: var(--ctl-h); padding: 0 14px; border-radius: var(--r-ctl); cursor: pointer;
+  background: var(--ai); color: var(--ai-ink); border: 1px solid var(--ai); font-weight: 600;
+}
+button.ghost { background: transparent; color: var(--ink); border-color: var(--edge); font-weight: 500; }
+button.ghost:hover { background: var(--ai-soft); }
+button:not(.ghost):hover { filter: brightness(1.08); }
+button.danger { background: var(--err); border-color: var(--err); color: #fff; }
+button.danger.quiet { background: transparent; color: var(--err); border-color: var(--err); }
+button.danger.quiet:hover { background: color-mix(in srgb, var(--err) 10%, transparent); }
+button:disabled { opacity: .55; cursor: default; filter: none; }
+input, select, textarea {
+  min-height: var(--ctl-h); background: var(--sheet); border: 1px solid var(--edge);
+  border-radius: var(--r-ctl); padding: 0 10px; min-width: 0;
+}
+select {
+  appearance: none; padding-right: 30px; cursor: pointer;
+  background-image: linear-gradient(45deg, transparent 45%, var(--ink-2) 45%, var(--ink-2) 60%, transparent 60%),
+    linear-gradient(-45deg, transparent 45%, var(--ink-2) 45%, var(--ink-2) 60%, transparent 60%);
+  background-size: 6px 6px; background-position: calc(100% - 17px) 55%, calc(100% - 12px) 55%; background-repeat: no-repeat;
+}
+input[type=checkbox], input[type=radio] { min-height: 0; width: 16px; height: 16px; accent-color: var(--ai); margin: 0; }
+input[type=file] { border-style: dashed; padding: 6px; height: auto; }
+input[type=file]::file-selector-button {
+  margin-right: 10px; min-height: 28px; padding: 0 12px; border-radius: var(--r-ctl);
+  border: 1px solid var(--edge); background: transparent; color: var(--ink); font: inherit; cursor: pointer;
+}
+::placeholder { color: var(--ink-2); opacity: .8; }
+:focus-visible { outline: 2px solid var(--ai); outline-offset: 2px; }
+a { color: var(--ai); text-underline-offset: 3px; }
+
+/* text helpers */
+.muted { color: var(--ink-2); }
 .small { font-size: 12px; }
 .block { display: block; }
-.row { display: flex; gap: 10px; align-items: center; }
-.row.tight { gap: 6px; flex-wrap: wrap; }
-.stack { display: flex; flex-direction: column; gap: 6px; }
-.grow { flex: 1; min-width: 0; }
 .title { font-weight: 600; overflow-wrap: anywhere; }
-.pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
-.pill.ok { color: var(--ok); } .pill.err { color: var(--err); } .pill.pending, .pill.busy { color: var(--warn); } .pill.off { color: var(--muted); }
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
-.cover { width: 72px; height: 102px; object-fit: cover; border-radius: 6px; background: var(--line); flex: none; }
-.thumb { width: 34px; height: 48px; object-fit: cover; border-radius: 4px; background: var(--line); flex: none; }
-.none { display: block; }
+.err-text { color: var(--err); }
+.ok-text { color: var(--ok); }
+code { font-size: 12px; background: var(--ai-soft); padding: 1px 5px; border-radius: 4px; }
+
+/* layout helpers */
+.row { display: flex; gap: var(--s3); align-items: center; }
+.row.tight { gap: var(--s2); flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: var(--s2); }
+.grow { flex: 1; min-width: 0; }
+.card { background: var(--sheet); border: 1px solid var(--line); border-radius: var(--r-float); padding: var(--s4); }
+
+/* sync state: dot + text; .pill classes are toggled at runtime */
+.pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--ink-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.pill::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--edge); }
+.pill.ok::before { background: var(--ok); }
+.pill.err { color: var(--err); } .pill.err::before { background: var(--err); }
+.pill.pending::before, .pill.busy::before { background: var(--warn); }
+.syncbox { display: inline-flex; align-items: center; gap: var(--s3); padding-left: var(--s3); border-left: 1px solid var(--line); }
+
+/* wordmark: a little bookmark ribbon (shiori) */
+.brand { display: inline-flex; align-items: center; gap: 8px; font-size: 20px; font-weight: 760; letter-spacing: -.02em; }
+.brand::before { content: ""; width: 10px; height: 16px; background: var(--ai); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%); }
+
+/* covers */
+.cover { width: 72px; height: 102px; object-fit: cover; border-radius: var(--r-cover); background: var(--tone); flex: none; display: block; }
+.thumb { width: 34px; height: 48px; object-fit: cover; border-radius: 2px; background: var(--tone); flex: none; }
+.none, .tone {
+  background-color: var(--line);
+  background-image: radial-gradient(var(--tone) 1.2px, transparent 1.4px);
+  background-size: 6px 6px;
+}
+
+/* chapter progress bar */
+progress { appearance: none; display: block; width: 100%; height: 4px; border: 0; border-radius: 2px; background: var(--line); overflow: hidden; }
+progress::-webkit-progress-bar { background: var(--line); }
+progress::-webkit-progress-value { background: var(--ai); }
+progress::-moz-progress-bar { background: var(--ai); }
+
+/* the obi: the one loud thing — chapters waiting */
+.obi { background: var(--obi); color: var(--obi-ink); font-weight: 760; font-variant-numeric: tabular-nums; border-top: 1px solid var(--obi-ink); }
+.chip { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.err-text.chip { border-color: var(--err); }
+
+.read, .num { font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: no-preference) {
+  button, .tab { transition: background-color .12s, filter .12s, color .12s; }
+}

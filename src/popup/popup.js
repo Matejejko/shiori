@@ -32,16 +32,17 @@ async function renderCurrent(lib, covers) {
     const input = h('input', { type: 'number', step: 'any', min: 0, value: p ?? '', attrs: { 'aria-label': 'Chapter read' }, class: 'chap' });
     const msg = h('span', { class: 'muted small' });
     box.append(
-      h('div', { class: 'row' },
+      h('div', { class: 'row now' },
         cover(e, covers, 'cover'),
         h('div', { class: 'grow' },
           h('div', { class: 'title', text: e.name }),
-          h('div', { class: 'muted small', text: `${cur.site || e.siteId} · ${folderName(lib.labels, e.folder)}` }),
-          h('div', { class: 'small', text: `Read ${fmtChap(p)} / latest ${fmtChap(l)}` }),
+          h('div', { class: 'muted small line' }, h('span', { text: cur.site || e.siteId }), h('span', { text: folderName(lib.labels, e.folder) })),
+          h('div', { class: 'small read', text: `Read ${fmtChap(p)} / latest ${fmtChap(l)}` }),
+          typeof p === 'number' && typeof l === 'number' ? h('progress', { attrs: { max: l, value: Math.min(p, l), 'aria-hidden': 'true' } }) : null,
           chapHere !== null && chapHere !== undefined ? h('div', { class: 'small', text: `This page: chapter ${fmtChap(chapHere)}` }) : null,
         ),
       ),
-      h('form', { class: 'row tight', on: { submit: async (ev) => {
+      h('form', { class: 'row tight correct', on: { submit: async (ev) => {
         ev.preventDefault();
         const chap = input.value.trim() === '' ? NaN : Number(input.value);
         if (!Number.isFinite(chap) || chap < 0) { msg.textContent = 'Enter a chapter number'; return; }
@@ -51,7 +52,7 @@ async function renderCurrent(lib, covers) {
           refresh();
         } catch (err) { msg.textContent = err.message; }
       } } },
-        h('label', { class: 'small', text: 'Progress' }), input, h('button', { type: 'submit', text: 'Set' }), msg),
+        h('label', { class: 'small', text: 'Progress' }), input, h('button', { type: 'submit', class: 'ghost', text: 'Set' }), msg),
     );
     return;
   }
@@ -100,7 +101,8 @@ async function renderUnread(lib, covers, cfg) {
         cover(e, covers),
         h('span', { class: 'grow' },
           h('span', { class: 'title small', text: e.name }),
-          h('span', { class: 'muted small block', text: `${fmtChap(e.progress?.chap)} → ${fmtChap(e.latest.chap)}${behind > 0 && Number.isFinite(behind) ? ` (+${fmtChap(behind)})` : ''}` })),
+          h('span', { class: 'muted small block read', text: `${fmtChap(e.progress?.chap)} → ${fmtChap(e.latest.chap)}` })),
+        behind > 0 && Number.isFinite(behind) ? h('span', { class: 'obi', text: `+${fmtChap(behind)}` }) : null,
       )));
   }
 }
