@@ -105,7 +105,7 @@ function renderGrid() {
     grid.append(h('button', { type: 'button', class: 'tile', on: { click: () => openEditor(e.id) }, attrs: { title: e.name } },
       h('span', { class: 'spine' },
         url ? h('img', { class: 'art', src: url, attrs: { alt: '', loading: 'lazy' } }) : h('span', { class: 'art tone', text: e.name, attrs: { 'aria-hidden': 'true' } }),
-        n > 0 ? h('span', { class: 'badge obi', text: `+${fmtChap(n)}` }) : null),
+        n > 0 ? h('span', { class: 'badge new', text: `+${fmtChap(n)}` }) : null),
       h('span', { class: 'meta' },
         h('span', { class: 'name', text: e.name }),
         h('span', { class: 'line' }, h('span', { class: 'site', text: e.siteId }), h('span', { class: 'folder', text: labelFor('folder', e.folder) })),
@@ -134,6 +134,9 @@ $('checkAll').addEventListener('click', async () => {
 function numOrEmpty(v) { return v === undefined || v === null ? '' : String(v); }
 const toDateInput = (ts) => (ts ? new Date(ts - new Date(ts).getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '');
 const fromDateInput = (s) => (s ? new Date(s + 'T12:00:00').getTime() : undefined);
+
+// click on the backdrop (outside the window) closes the series dialog
+$('edit').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
 
 function openEditor(id) {
   const e = state.lib.entries.find((x) => x.id === id);
@@ -185,7 +188,7 @@ function openEditor(id) {
     h('div', { class: 'ed-head' },
       h('span', { class: 'ed-cover' },
         e.img && state.covers[e.img] ? h('img', { class: 'cover', src: coverUrl(e.img, state.covers[e.img]), attrs: { alt: '' } }) : h('span', { class: 'cover tone' }),
-        unreadBy(e) > 0 ? h('span', { class: 'badge obi', text: `+${fmtChap(unreadBy(e))}` }) : null),
+        unreadBy(e) > 0 ? h('span', { class: 'badge new', text: `+${fmtChap(unreadBy(e))}` }) : null),
       h('div', { class: 'ed-info' },
         h('h2', { class: 'ed-title', text: e.name }),
         h('div', { class: 'line' },

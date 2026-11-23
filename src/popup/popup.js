@@ -102,7 +102,7 @@ async function renderUnread(lib, covers, cfg) {
         h('span', { class: 'grow' },
           h('span', { class: 'title small', text: e.name }),
           h('span', { class: 'muted small block read', text: `${fmtChap(e.progress?.chap)} → ${fmtChap(e.latest.chap)}` })),
-        behind > 0 && Number.isFinite(behind) ? h('span', { class: 'obi', text: `+${fmtChap(behind)}` }) : null,
+        behind > 0 && Number.isFinite(behind) ? h('span', { class: 'badge new', text: `+${fmtChap(behind)}` }) : null,
       )));
   }
 }

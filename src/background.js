@@ -209,10 +209,24 @@ function scrapePage() {
   }
   // genre links, with MangaPin's per-site selectors; menus/headers excluded (site-wide genre lists)
   const genreSel = '.mgen a, .genres-content a, .genre-tag, a[href*="?genres_in="], a[href*="/browse?genres="], a[href*="?tag="], a[href*="/tag/"], a[href*="search?genres="], a[href*="/genres/"]';
-  const genres = [...document.querySelectorAll(genreSel)]
+  let genres = [...document.querySelectorAll(genreSel)]
     .filter((el) => !el.closest('nav, header, footer, [role="navigation"], .menu'))
     .map((el) => el.textContent.trim()).filter((t) => t && t.length < 40);
-  return { h1, ogTitle: meta('meta[property="og:title"]'), title: document.title, imgs: [...new Set(imgs)].slice(0, 6), genres: genres.length > 30 ? [] : genres };
+  if (genres.length > 80) genres = []; // a site-wide genre list slipped through
+  // embedded data: Comix ships genres/formats/tags as JSON (no links); many sites carry schema.org "genre"
+  const json = (el) => { try { return el ? JSON.parse(el.textContent) : null; } catch { return null; } };
+  const init = json(document.querySelector('script#initial-data'));
+  for (const [k, q] of Object.entries(init?.queries || {})) {
+    if (!k.includes('"detail"')) continue; // only this series, not recommendations
+    for (const f of ['genres', 'demographics', 'formats', 'tags']) for (const g of Array.isArray(q?.[f]) ? q[f] : []) if (g && g.title) genres.push(String(g.title));
+  }
+  for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
+    const d = json(el);
+    for (const o of [d, ...(Array.isArray(d?.['@graph']) ? d['@graph'] : [])].flat()) {
+      if (o && o.genre) genres.push(...[o.genre].flat().map(String));
+    }
+  }
+  return { h1, ogTitle: meta('meta[property="og:title"]'), title: document.title, imgs: [...new Set(imgs)].slice(0, 6), genres };
 }
 
 /** Page title -> series name: drop "Read … Online", "- Arenascans"-style site suffixes. */

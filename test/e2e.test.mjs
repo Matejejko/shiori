@@ -73,6 +73,11 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.check('#fTag input[value="81"]');
     await app.waitForFunction((n) => document.querySelectorAll('#grid .tile').length === n, want);
     assert.match(await app.textContent('#fTag summary'), /Action, Fantasy|Fantasy, Action/);
+    // series window: opens on a tile, closes on a click outside it
+    await app.click('#grid .tile >> nth=0');
+    await app.waitForSelector('dialog#edit[open]');
+    await app.mouse.click(5, 5);
+    await app.waitForFunction(() => !document.querySelector('dialog#edit').open);
     await app.uncheck('#fTag input[value="60"]');
     await app.uncheck('#fTag input[value="81"]');
     await app.click('#fTag summary');
@@ -149,10 +154,18 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.match(entry.id, /^[A-Za-z0-9]{10}$/);
     assert.deepEqual(entry.tags, [60, 81]); // Action, Fantasy — menu genres ignored
 
+    // the tab-update event reaches the tracker asynchronously: wait for it, up to 5 s
+    const entryWhen = async (pred) => {
+      for (let i = 0; i < 50; i++) {
+        const e = await sw.evaluate(async (id) => (await self.shiori.store.getEntry(id)), entry.id);
+        if (pred(e)) return e;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      return sw.evaluate(async (id) => (await self.shiori.store.getEntry(id)), entry.id);
+    };
     await site.goto('https://arenascan.com/e2e-pin-test-chapter-7/');
-    await sw.evaluate(async () => { await self.shiori.store.withLock(async () => {}); });
-    const after = await sw.evaluate(async (id) => (await self.shiori.store.getEntry(id)), entry.id);
-    assert.equal(after.progress.chap, 7);
+    const after = await entryWhen((e) => e?.progress?.chap === 7);
+    assert.equal(after.progress?.chap, 7);
 
     // forward only: going back to chapter 3 does not regress
     await site.goto('https://arenascan.com/e2e-pin-test-chapter-3/');
@@ -161,6 +174,19 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.equal((await sw.evaluate(async (id) => (await self.shiori.store.getEntry(id)), entry.id)).progress.chap, 7);
     await site.close();
     await popup.close();
+
+    // Comix renders genres with JS; they come from the embedded #initial-data JSON (saved real page)
+    const comixHtml = readFileSync(join(SITE_FIXTURES, 'comix-series.html'), 'utf8');
+    await ctx.route('https://comix.to/**', (r) => (new URL(r.request().url()).pathname === '/title/1j7n-not-interested-in-dating'
+      ? r.fulfill({ status: 200, contentType: 'text/html', body: comixHtml }) : r.fulfill({ status: 404, body: '' })));
+    const cx = await ctx.newPage();
+    await cx.goto('https://comix.to/title/1j7n-not-interested-in-dating');
+    const cxTab = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://comix.to/*' }))[0].id);
+    const r = await sw.evaluate((id) => self.shiori.handlers.pin({ tabId: id }), cxTab);
+    const pinned = await sw.evaluate(async (id) => self.shiori.store.getEntry(id), r.id);
+    assert.equal(pinned.siteId, 'comix');
+    for (const t of [70, 119, 14, 27, 26]) assert.ok(pinned.tags.includes(t), `tag ${t} in ${pinned.tags}`); // Comedy Romance Josei Long Strip Full Color
+    await cx.close();
   });
 
   await t.test('settings + sync writes Shiori/library.json to OpenCloud', { skip: !env && 'no OpenCloud configured (test/opencloud/start.sh)' }, async () => {
@@ -181,7 +207,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const doc = await dav.getText('Shiori/library.json');
     assert.ok(doc, 'library.json exists');
     const lib = fromDoc(doc.text);
-    assert.equal(lib.entries.size, expected + 1); // + the series pinned above
+    assert.equal(lib.entries.size, expected + 2); // + the two series pinned above (Arena, Comix)
     const covers = await dav.propfind('Shiori/covers/', 1);
     assert.ok(covers.filter((x) => !x.self).length >= parseExport(fixture.text).imgs.size);
     // the token never lands in synced data or in plain settings
