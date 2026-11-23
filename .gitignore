@@ -1,0 +1,12 @@
+# your real MangaPin export(s) — personal data, never committed
+test/fixtures/private/
+# throwaway OpenCloud state (binary, config, data, token)
+test/opencloud/bin/
+test/opencloud/config/
+test/opencloud/data/
+test/opencloud/run/
+test/opencloud/env
+test/opencloud/.fetch.*
+node_modules/
+test-results/
+*.zip
