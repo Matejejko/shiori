@@ -1,48 +1,41 @@
-// Declarative site adapters. Each site is data: hosts, URL templates, and how to get the
-// chapter list. The engine below turns templates into regexes (parse) and strings (build).
+// Adapter engine over the declarative table in sites.js: parse URLs, build URLs, extract
+// chapter lists from raw HTML/JSON (no DOMParser in service workers, so text + regex).
 //
-// Template placeholders:
-//   {slug}  series slug (MangaPin's `slug`)      {chap}  chapter number (10, 10.5)
-//   {cslug} chapter slug (MangaPin's progress.slug / next.slug)
-//   {cid}   numeric chapter id                   {*}     any single path segment
-// Chapter numbers are written per site with `chapSep` ('-' -> 10-5, '.' -> 10.5).
-//
-// Ground truth for hosts/bases: MangaPin web app sites.json (6.14.0) — see test/fixtures/sites/README.md.
+// MangaPin URL rules (from its web app): a slug starting with http(s):// is used as-is
+// (host swapped to the site's current host when it is not one of the site's hosts); a slug
+// starting with "/" is resolved against the host; otherwise the site's template applies.
+// For raw-hostname siteIds (generic sites) MangaPin stores the full path as slug.
 
 import { SITES } from './sites.js';
 
-const NUM = '\\d{1,5}(?:[.-]\\d{1,3})?';
+const bare = (h) => String(h || '').toLowerCase().replace(/^www\./, '');
+const isAbs = (s) => /^https?:\/\//i.test(s);
 
-function compile(template) {
-  // template is a path, e.g. "/title/{slug}/{cid}-chapter-{chap}"
-  let re = '';
-  const names = [];
-  for (const part of template.split(/(\{[a-z*]+\})/)) {
-    const m = /^\{([a-z*]+)\}$/.exec(part);
-    if (!m) { re += part.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); continue; }
-    const n = m[1];
-    if (n === '*') re += '[^/]+';
-    else if (names.includes(n)) re += `\\k<${n}>`;
-    else {
-      names.push(n);
-      re += n === 'slug' ? '(?<slug>[^/?#]+?)' : n === 'cslug' ? '(?<cslug>[^/?#]+?)' : n === 'cid' ? '(?<cid>\\d+)' : n === 'chap' ? `(?<chap>${NUM})` : '([^/]+)';
-    }
-  }
-  return new RegExp('^' + re + '/?$', 'i');
+const cache = new Map();
+function compiled(id) {
+  if (cache.has(id)) return cache.get(id);
+  const s = SITES[id];
+  const c = {
+    seriesRe: (s.seriesRe || []).map((r) => new RegExp(r, 'i')),
+    chapterRe: (s.chapterRe || []).map((r) => new RegExp(r, 'i')),
+    hosts: [s.host, ...(s.mirrors || []), ...(s.legacyHosts || [])].map(bare),
+  };
+  cache.set(id, c);
+  return c;
 }
 
-function fill(template, vals) {
-  return template.replace(/\{([a-z*]+)\}/g, (_, n) => {
-    const v = vals[n];
-    if (v === undefined || v === null || v === '') throw new Error('missing ' + n);
-    return n === 'slug' || n === 'cslug' ? String(v).split('/').map(encodeURIComponent).join('/') : String(v);
-  });
+export function getAdapter(siteId) {
+  return typeof siteId === 'string' && Object.prototype.hasOwnProperty.call(SITES, siteId) ? { id: siteId, ...SITES[siteId] } : null;
+}
+export function siteName(siteId) { const a = getAdapter(siteId); return a ? a.name : siteId; }
+export function allSiteIds() { return Object.keys(SITES); }
+
+export function adapterForHost(hostname) {
+  const h = bare(hostname);
+  for (const id of Object.keys(SITES)) if (compiled(id).hosts.includes(h)) return getAdapter(id);
+  return null;
 }
 
-export function chapToString(chap, sep = '-') {
-  const s = Number.isInteger(chap) ? String(chap) : String(Math.round(chap * 1000) / 1000);
-  return s.replace('.', sep);
-}
 export function parseChapNumber(s) {
   if (s === undefined || s === null) return null;
   const m = /(\d{1,5})(?:[.-](\d{1,3}))?/.exec(String(s));
@@ -50,142 +43,170 @@ export function parseChapNumber(s) {
   const n = Number(m[2] !== undefined ? `${m[1]}.${m[2]}` : m[1]);
   return Number.isFinite(n) ? n : null;
 }
-
-const cache = new Map();
-function compiled(site) {
-  if (cache.has(site.id)) return cache.get(site.id);
-  const c = {
-    series: (site.series || []).map((t) => ({ t, re: compile(t) })),
-    chapter: (site.chapter || []).map((t) => ({ t, re: compile(t) })),
-    hosts: [site.host, ...(site.mirrors || []), ...(site.legacyHosts || [])].map((h) => h.toLowerCase().replace(/^www\./, '')),
-  };
-  cache.set(site.id, c);
-  return c;
-}
-
-const bare = (h) => h.toLowerCase().replace(/^www\./, '');
-
-export function getAdapter(siteId) {
-  return Object.prototype.hasOwnProperty.call(SITES, siteId) ? { id: siteId, ...SITES[siteId] } : null;
-}
-export function siteName(siteId) {
-  const a = getAdapter(siteId);
-  return a ? a.name : siteId;
-}
-export function allSiteIds() { return Object.keys(SITES); }
-
-/** Adapter for a hostname (current host, mirror or legacy host). */
-export function adapterForHost(hostname) {
-  const h = bare(hostname);
-  for (const id of Object.keys(SITES)) if (compiled({ id, ...SITES[id] }).hosts.includes(h)) return getAdapter(id);
-  return null;
+export function chapToString(chap, sep = '-') {
+  const s = Number.isInteger(chap) ? String(chap) : String(Math.round(chap * 1000) / 1000);
+  return s.replace('.', sep);
 }
 
 /**
- * Parse a URL. Returns {siteId, slug, kind:'series'|'chapter', chap?, cslug?, cid?} or null.
- * Chapter templates are tried first (they are more specific).
+ * Parse a URL. Returns null for unknown hosts, otherwise
+ * {siteId, slug, kind:'series'|'chapter'|null, chap?, chapSlug?, cid?}.
+ * chap is null on sites whose chapter URLs carry no number (kagane).
  */
 export function matchUrl(url) {
   let u;
   try { u = new URL(url); } catch { return null; }
   const a = adapterForHost(u.hostname);
   if (!a) return null;
-  const c = compiled(a);
+  const c = compiled(a.id);
   let path = u.pathname;
   try { path = decodeURI(path); } catch { /* keep raw */ }
-  for (const { re } of c.chapter) {
+  for (const re of c.chapterRe) {
     const m = re.exec(path);
-    if (!m) continue;
-    const g = m.groups || {};
-    let slug = g.slug;
-    if (!slug && a.slugFromChapter) slug = a.slugFromChapter(g);
-    if (!slug) continue;
-    const chap = g.chap !== undefined ? parseChapNumber(g.chap) : parseChapNumber(g.cslug && (a.chapFromCslug ? a.chapFromCslug(g.cslug) : g.cslug));
-    if (chap === null) continue;
-    const out = { siteId: a.id, slug, kind: 'chapter', chap };
-    if (g.cslug) out.cslug = g.cslug;
+    if (!m || !m.groups || !m.groups.slug) continue;
+    const g = m.groups;
+    const out = { siteId: a.id, slug: g.slug, kind: 'chapter', chap: g.chap !== undefined ? parseChapNumber(g.chap) : null };
+    if (g.cslug) out.chapSlug = g.cslug;
     if (g.cid) out.cid = g.cid;
-    out.chapSlug = a.progressSlug ? a.progressSlug(g) : g.cslug;
     return out;
   }
-  for (const { re } of c.series) {
+  for (const re of c.seriesRe) {
     const m = re.exec(path);
     if (m && m.groups && m.groups.slug) return { siteId: a.id, slug: m.groups.slug, kind: 'series' };
   }
   return { siteId: a.id, slug: null, kind: null };
 }
 
-/** Normalised slug for fuzzy matching (sites that append volatile suffixes). */
-export function slugKey(siteId, slug) {
-  const a = getAdapter(siteId);
-  const s = String(slug || '').toLowerCase();
-  return a && a.slugKey ? a.slugKey(s) : s;
+/** The series slug of an entry, resolving MangaPin's URL-or-path slugs for known sites. */
+export function entrySlug(entry) {
+  const s = String(entry.slug ?? '');
+  const a = getAdapter(entry.siteId);
+  if (!a || (!isAbs(s) && !s.startsWith('/'))) return s;
+  const m = matchUrl(isAbs(s) ? s.replace(/^https?:\/\/[^/]+/i, `https://${a.host}`) : `https://${a.host}${s}`);
+  return m && m.slug ? m.slug : s;
 }
 
-/** Series URL from siteId + slug (an explicit entry.url is NOT consulted here). */
-export function seriesUrl(entry) {
-  const a = getAdapter(entry.siteId);
-  if (!a || !entry.slug || !a.series || !a.series.length) return null;
-  try { return `https://${a.host}${fill(a.series[0], { slug: entry.slug })}`; } catch { return null; }
+/** Normalised slug for comparing series (volatile prefixes/suffixes removed). */
+export function slugKey(siteId, slug) {
+  const a = getAdapter(siteId);
+  const s = String(entrySlug({ siteId, slug }) || '').toLowerCase();
+  return a && a.slugKey ? a.slugKey(s) : s;
+}
+export function sameSeries(siteId, slugA, slugB) {
+  return slugA === slugB || slugKey(siteId, slugA) === slugKey(siteId, slugB);
+}
+
+function fill(template, vals) {
+  return template.replace(/\{([a-zA-Z]+)\}/g, (_, n) => {
+    const v = vals[n];
+    if (v === undefined || v === null || v === '') throw new Error('missing ' + n);
+    return n === 'chap' || n === 'cid' ? String(v) : String(v).split('/').map(encodeURIComponent).join('/');
+  });
+}
+
+function resolveMangaPinUrl(a, s, kind) {
+  // Absolute: used as-is on the current host or a live mirror. On a legacy host (which may
+  // redirect to the homepage, like asuracomic.net) it is re-parsed and rebuilt on the current
+  // template; failing that, the host is swapped (MangaPin's rule).
+  let u;
+  try { u = new URL(s); } catch { return null; }
+  const live = [a.host, ...(a.mirrors || [])].map(bare);
+  if (live.includes(bare(u.hostname))) return u.href;
+  const m = matchUrl(u.href);
+  if (m && m.slug && kind === 'series' && m.kind === 'series') return seriesUrl({ siteId: a.id, slug: m.slug });
+  if (m && m.slug && kind === 'chapter' && m.kind === 'chapter') return chapterUrl({ siteId: a.id, slug: m.slug }, { chap: m.chap, slug: m.chapSlug, id: m.cid });
+  u.hostname = a.host;
+  return u.href;
 }
 
 /**
- * Chapter URL for an entry and a chapter ({chap, slug?, id?} — MangaPin's next/progress shape).
- * Uses the first chapter template whose placeholders can all be filled.
+ * Series URL from siteId + slug (MangaPin rules). `link: true` gives the user-facing variant
+ * (e.g. Thunderscans without its rotating id, which redirects to the current URL).
+ * Generic sites: only when the slug is a path or URL (MangaPin's local-site behaviour).
+ */
+export function seriesUrl(entry, { link = false } = {}) {
+  const s = String(entry.slug ?? '');
+  if (!s) return null;
+  const a = getAdapter(entry.siteId);
+  if (!a) {
+    const host = String(entry.siteId || '');
+    if (isAbs(s)) return s;
+    if (s.startsWith('/') && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(host)) return `https://${host}${s}${s.endsWith('/') ? '' : '/'}`;
+    return null;
+  }
+  if (isAbs(s)) return resolveMangaPinUrl(a, s, 'series');
+  if (s.startsWith('/')) return `https://${a.host}${s}`;
+  const slug = link && a.linkSlug === 'base' && a.slugBase ? a.slugBase(s) : s;
+  try { return `https://${a.host}${fill(a.seriesUrl, { slug })}`; } catch { return null; }
+}
+
+/**
+ * Chapter URL for an entry and a MangaPin chapter object ({chap, slug?, id?}).
+ * Tries the site's templates in order; null when no template can be filled (e.g. Comix
+ * needs the chapter id, which only the site knows).
  */
 export function chapterUrl(entry, ch) {
+  if (!ch) return null;
   const a = getAdapter(entry.siteId);
-  if (!a || !entry.slug || !ch || typeof ch.chap !== 'number') return null;
-  const vals = { slug: entry.slug, chap: chapToString(ch.chap, a.chapSep || '-'), cslug: ch.slug, cid: ch.id };
-  if (a.cslugFromProgress && ch.slug) vals.cslug = a.cslugFromProgress(ch.slug);
-  for (const t of a.chapterBuild || a.chapter || []) {
-    try { return `https://${a.host}${fill(t, vals)}`; } catch { /* try next */ }
+  const cs = ch.slug !== undefined && ch.slug !== null ? String(ch.slug) : '';
+  if (!a) {
+    if (isAbs(cs)) return cs;
+    if (cs.startsWith('/') && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(String(entry.siteId))) return `https://${entry.siteId}${cs}`;
+    return null;
+  }
+  if (isAbs(cs)) return resolveMangaPinUrl(a, cs, 'chapter');
+  if (cs.startsWith('/')) return `https://${a.host}${cs}`;
+  const slug = entrySlug(entry);
+  const vals = {
+    slug, slugBase: a.slugBase ? a.slugBase(slug) : slug, cslug: cs || undefined, cid: ch.id,
+    chap: typeof ch.chap === 'number' && Number.isFinite(ch.chap) ? chapToString(ch.chap, a.chapSep || '-') : undefined,
+  };
+  for (const t of a.chapterUrl || []) {
+    try { return `https://${a.host}${fill(t, vals)}`; } catch { /* next template */ }
   }
   return null;
 }
 
-/** What to fetch for the chapter list: array of requests (or functions of ctx -> request). */
+/** Requests (or ctx => request functions) that fetch the chapter list; null if unsupported. */
 export function listRequest(entry) {
   const a = getAdapter(entry.siteId);
   if (!a || !a.list) return null;
-  if (a.list.requests) return a.list.requests(entry, a);
-  const url = seriesUrl(entry);
+  const e = { ...entry, slug: entrySlug(entry) };
+  if (a.list.requests) return a.list.requests(e, a).filter((r) => r !== null);
+  const url = seriesUrl(e);
   return url ? [{ url }] : null;
 }
 
-// Chapter-link extraction from raw HTML/JSON text: every URL-ish string is unescaped and
-// matched against the site's chapter templates; only links of *this* series count.
-const URLISH = /(?:https?:)?(?:\\?\/\\?\/[a-z0-9.-]+)?(?:\\?\/[A-Za-z0-9._~%!$&'()*+,;=:@-]+)+\\?\/?/g;
+// Every URL-ish string in the text (HTML attributes, JSON strings with escaped slashes).
+const URLISH = /(?:https?:\/\/[a-z0-9.-]+)?(?:\/[A-Za-z0-9._~%!$&'()*+,;=:@-]+)+\/?/gi;
+const unescapeText = (t) => t.replace(/\\u002[fF]/g, '/').replace(/\\\//g, '/').replace(/&#x2[fF];|&#47;/g, '/').replace(/&amp;/g, '&');
 
-function unescapeJsonish(text) {
-  return text.replace(/\\u002[fF]/g, '/').replace(/\\\//g, '/').replace(/&#x2[fF];|&#47;/g, '/').replace(/&amp;/g, '&');
-}
-
+/** Chapter links of *this* series found anywhere in a page/JSON body, deduplicated by number. */
 export function extractChapterLinks(entry, text, baseUrl) {
   const a = getAdapter(entry.siteId);
   if (!a) return [];
-  const c = compiled(a);
+  const hosts = compiled(a.id).hosts;
+  const want = slugKey(entry.siteId, entry.slug);
   const out = new Map();
-  const src = unescapeJsonish(text);
-  const wantKey = slugKey(entry.siteId, entry.slug);
-  for (const m of src.matchAll(URLISH)) {
-    let raw = m[0].replace(/\\/g, '');
+  for (const m of unescapeText(String(text)).matchAll(URLISH)) {
     let u;
-    try { u = new URL(raw, baseUrl || `https://${a.host}/`); } catch { continue; }
-    if (!c.hosts.includes(bare(u.hostname))) continue;
+    try { u = new URL(m[0], baseUrl || `https://${a.host}/`); } catch { continue; }
+    if (!hosts.includes(bare(u.hostname))) continue;
     const hit = matchUrl(u.href);
-    if (!hit || hit.kind !== 'chapter') continue;
-    if (hit.slug !== entry.slug && slugKey(entry.siteId, hit.slug) !== wantKey) continue;
-    const key = String(hit.chap);
-    if (!out.has(key)) out.set(key, { chap: hit.chap, slug: hit.chapSlug, id: hit.cid, url: u.href });
+    if (!hit || hit.kind !== 'chapter' || hit.chap === null) continue;
+    if (slugKey(a.id, hit.slug) !== want) continue;
+    if (!out.has(hit.chap)) out.set(hit.chap, { chap: hit.chap, slug: hit.chapSlug, id: hit.cid, url: u.href });
   }
   return [...out.values()];
 }
 
-/** Parse a fetched chapter-list response. Returns {chapters, ctx?}. */
-export function extractChapters(entry, text, req, ctx) {
+const helpers = { extractChapterLinks, parseChapNumber };
+
+/** Parse one fetched response. Returns {chapters, complete, ctx?}. */
+export function extractChapters(entry, text, req, ctx = {}) {
   const a = getAdapter(entry.siteId);
-  if (!a || !a.list) return { chapters: [] };
-  if (a.list.parse) return a.list.parse(entry, text, req, ctx, { extractChapterLinks, parseChapNumber }) || { chapters: [] };
-  return { chapters: extractChapterLinks(entry, text, req.url) };
+  if (!a || !a.list) return { chapters: [], complete: false };
+  const e = { ...entry, slug: entrySlug(entry) };
+  const r = a.list.parse ? a.list.parse(e, text, req, ctx, helpers) || {} : { chapters: extractChapterLinks(e, text, req.url) };
+  return { chapters: r.chapters || [], complete: r.complete ?? a.list.complete !== false, ctx: r.ctx };
 }
