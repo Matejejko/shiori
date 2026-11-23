@@ -119,7 +119,7 @@ for (const fx of exportFixtures()) {
         if (a) {
           const m = matchUrl(cu);
           if (e.siteId === 'kagane') { if (!m || m.kind !== 'chapter' || m.chapSlug !== ch.slug) fail.push(`kagane ${cu}`); continue; }
-          if (!m || m.siteId !== e.siteId || m.kind !== 'chapter' || !sameSeries(e.siteId, m.slug, entrySlug(e)) || m.chap !== ch.chap || (ch.slug && m.chapSlug !== ch.slug)) {
+          if (!m || m.siteId !== e.siteId || m.kind !== 'chapter' || !sameSeries(e.siteId, m.slug, entrySlug(e)) || m.chap !== ch.chap || (ch.slug && m.chapSlug !== ch.slug && new URL(cu).pathname !== ch.slug) /* MangaPin stores either the short slug or the full path */) {
             fail.push(`${field} ${e.siteId}/${e.slug} ch ${ch.chap} (${ch.slug ?? '-'}) -> ${cu} -> ${JSON.stringify(m)}`);
           }
         } else {
