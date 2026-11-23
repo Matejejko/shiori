@@ -4,8 +4,10 @@ import { prng } from './helpers.mjs';
 import { mergeEntry, mergeLibraries, libraryFingerprint, metaOf, canonical, editTs } from '../src/lib/merge.js';
 import { emptyLibrary, editEntry, setProgress, deleteEntry, addEntry } from '../src/lib/library.js';
 import { withField } from '../src/lib/mangapin.js';
+import { applyChapters } from '../src/lib/releases.js';
 
 const R = prng(1234);
+
 const ID = 'AbCdEfGh12';
 
 function baseEntry(ts = 1000) {
@@ -23,12 +25,11 @@ function mutate(entry, meta, now) {
   if (op === 0) editEntry(lib, ID, { folder: R.pick([1, 2, 4]), tags: [R.int(1, 9)] }, now);
   else if (op === 1) setProgress(lib, ID, (entry.progress?.chap ?? 0) + R.pick([0.5, 1, 2]), { now });
   else if (op === 2) setProgress(lib, ID, R.int(1, 30), { manual: true, now });
-  else if (op === 3) { // release check: latest/next + ts bump, rest untouched
-    const chap = (entry.latest?.chap ?? 0) + R.int(0, 3);
-    let e = withField(entry, 'latest', { chap, ts: now });
-    e = withField(e, 'next', { chap: (e.progress?.chap ?? 0) + 1, ts: now });
-    e = withField(e, 'ts', Math.max(now, e.ts));
-    lib.entries.set(ID, e);
+  else if (op === 3) { // release check (the real one): latest/next + ts bump, rest untouched
+    const top = (entry.latest?.chap ?? 0) + R.int(0, 3);
+    const chapters = Array.from({ length: 6 }, (_, k) => ({ chap: top - k, slug: `c-${top - k}` }));
+    const e = applyChapters(entry, chapters, now, { complete: R.bool(0.7) });
+    if (e) lib.entries.set(ID, e);
   } else if (op === 4) editEntry(lib, ID, { name: 'Renamed ' + R.int(1, 99), score: R.int(1, 10) }, now);
   else setProgress(lib, ID, (entry.progress?.chap ?? 0) + 1, { slug: 'chapter-x', now });
   return { entry: lib.entries.get(ID), meta: lib.meta.get(ID) };
@@ -73,21 +74,41 @@ test('mergeEntry is associative', () => {
   }
 });
 
-test('merge never regresses progress and keeps ts >= nested ts', () => {
-  for (let i = 0; i < 3000; i++) {
-    const [a, b] = randomVersions(2);
-    const r = m(a, b);
-    const pa = metaOf(a.entry, a.meta).pe, pb = metaOf(b.entry, b.meta).pe;
-    const top = Math.max(pa, pb);
-    // within the newest progress epoch the result has the furthest chapter
-    for (const [v, pe] of [[a, pa], [b, pb]]) {
-      if (pe === top && v.entry.progress) assert.ok(r.entry.progress.chap >= v.entry.progress.chap);
-    }
-    assert.equal(r.meta.pe, top);
+// Oracle for progress: every progress value a version has ever held is a read event; the
+// answer is the furthest chapter among events at/after the latest manual correction.
+function events(v) {
+  const m = metaOf(v.entry, v.meta);
+  return { pm: m.pm ?? -Infinity, ev: [v.entry.progress, ...(m.pf || [])].filter(Boolean) };
+}
+test('progress = furthest chapter read since the last manual correction; ts >= nested ts', () => {
+  for (let i = 0; i < 4000; i++) {
+    const vs = randomVersions(R.int(2, 3));
+    const r = vs.slice(1).reduce((acc, v) => m(acc, v), vs[0]);
+    const all = vs.map(events);
+    const pm = Math.max(...all.map((x) => x.pm));
+    const eligible = all.flatMap((x) => x.ev).filter((p) => pm === -Infinity || p.ts >= pm);
+    const best = Math.max(...eligible.map((p) => p.chap));
+    assert.equal(r.entry.progress.chap, best, JSON.stringify(vs));
+    assert.equal(metaOf(r.entry, r.meta).pm ?? -Infinity, pm);
     for (const k of ['progress', 'latest', 'next']) if (r.entry[k]?.ts !== undefined) assert.ok(r.entry.ts >= r.entry[k].ts);
-    // latest never goes down
-    assert.ok((r.entry.latest?.chap ?? -1) >= Math.max(a.entry.latest?.chap ?? -1, b.entry.latest?.chap ?? -1));
+    assert.ok((r.entry.latest?.chap ?? -1) >= Math.max(...vs.map((v) => v.entry.latest?.chap ?? -1)));
   }
+});
+
+test('reads made after a correction on a device that had not seen it still count', () => {
+  const lib = emptyLibrary(); addEntry(lib, baseEntry(100));
+  const a = structuredClone(lib), b = structuredClone(lib);
+  setProgress(a, ID, 25, { manual: true, now: 200 });
+  for (let c = 9; c <= 40; c++) setProgress(b, ID, c, { now: 300 + c });
+  for (const r of [mergeLibraries(a, b), mergeLibraries(b, a)]) assert.equal(r.entries.get(ID).progress.chap, 40);
+});
+
+test('three-way merge with nested corrections is order independent (frontier keeps late reads)', () => {
+  // a: corrected at 100, read to 50 by t=150; b: never saw a correction, read 30 at t=400;
+  // c: corrected to 20 at t=300. Truth: since t=300 the furthest read is b's 30.
+  const mk = (chap, ts, pm) => ({ entry: { ...baseEntry(ts), progress: { chap, ts } }, meta: pm === undefined ? { r: 1 } : { r: 1, pm } });
+  const a = mk(50, 150, 100), b = mk(30, 400), c = mk(20, 300, 300);
+  for (const r of [m(m(a, b), c), m(a, m(b, c)), m(m(a, c), b), m(c, m(b, a))]) assert.equal(r.entry.progress.chap, 30);
 });
 
 test('stale offline device reading an old chapter cannot pull progress back', () => {

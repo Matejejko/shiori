@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { FIXTURES, exportFixtures } from './helpers.mjs';
 import { parseExport } from '../src/lib/mangapin.js';
-import { matchUrl, seriesUrl, chapterUrl, getAdapter, entrySlug, sameSeries } from '../src/lib/adapters.js';
+import { matchUrl, seriesUrl, chapterUrl, getAdapter, entrySlug, sameSeries, matchChapterForSeries } from '../src/lib/adapters.js';
 import { fetchChapters, applyChapters, isBlockedPage } from '../src/lib/releases.js';
 import { locate } from '../src/lib/tracker.js';
 import { emptyLibrary, addEntry } from '../src/lib/library.js';
@@ -166,7 +166,7 @@ const LISTS = [
   // siteId, slug, expected count, min, max, complete, sample {chap, slug}
   ['comix', '1j7n-not-interested-in-dating', 2, 1, 68, false, { chap: 68, slug: '9866083-chapter-68' }],
   ['vortex', 'a-space-marine-got-a-status-window', 19, 1, 19, true, { chap: 19, slug: 'chapter-19' }],
-  ['thunder', '0086250808-i-got-the-weakest-class-dragon-tamer', 118, 1, 308, true, { chap: 308, slug: 'i-got-the-weakest-class-dragon-tamer-chapter-308' }],
+  ['thunder', '0086250808-i-got-the-weakest-class-dragon-tamer', 124, 1, 308, true, { chap: 308, slug: 'i-got-the-weakest-class-dragon-tamer-chapter-308' }],
   ['asura', 'a-wimps-strategy-guide-to-conquer-the-tower-7de80a82', 56, 1, 56, true, { chap: 56, slug: '56' }],
   ['arena', 'a-portrait-of-pride', 23, 0, 22, true, { chap: 22, slug: 'a-portrait-of-pride-chapter-22' }],
   ['kingofshojo', 'anyone-can-see-its-a-beast', 74, 1, 74, true, { chap: 74, slug: 'anyone-can-see-its-a-beast-chapter-74' }],
@@ -185,12 +185,14 @@ for (const [siteId, slug, n, min, max, complete, sample] of LISTS) {
     assert.equal(r.complete, complete);
     const s = r.chapters.find((c) => c.chap === sample.chap);
     assert.equal(s.slug, sample.slug);
-    // every extracted chapter builds a URL that parses back to the same chapter
+    // every extracted chapter builds a URL that parses back to the same chapter (for root-level
+    // MangaThemesia paths like "/{title}-22/" only when the series is known, as tracking does)
     for (const c of r.chapters) {
       const u = chapterUrl({ siteId, slug }, c);
       if (!u) continue;
       const m = matchUrl(u);
-      assert.equal(m.chap, c.chap, u);
+      const chap = m && m.kind === 'chapter' && sameSeries(siteId, m.slug, slug) ? m.chap : matchChapterForSeries(u, siteId, slug)?.chap;
+      assert.equal(chap, c.chap, u);
     }
   });
 }

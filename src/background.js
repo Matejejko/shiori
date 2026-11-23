@@ -10,7 +10,6 @@ import { makeCover, fetchImage } from './lib/cover.js';
 import { locate, trackVisit } from './lib/tracker.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName } from './lib/adapters.js';
-import { mergeLabels } from './lib/merge.js';
 
 const api = globalThis.browser ?? globalThis.chrome;
 const store = new Store(api.storage.local);
@@ -33,6 +32,7 @@ async function ensureAlarms() {
 api.runtime.onInstalled.addListener(() => { ensureAlarms(); updateBadge(); });
 api.runtime.onStartup.addListener(() => { ensureAlarms(); updateBadge(); scheduleSync(SYNC_DEBOUNCE_MS); });
 ensureAlarms();
+store.setSyncState({ running: false }); // a worker killed mid-sync must not leave "Syncing…" forever
 
 api.alarms.onAlarm.addListener((a) => {
   if (a.name === 'sync') runSync('alarm');
@@ -104,7 +104,11 @@ function runSync(reason) {
       broadcast({ type: 'sync', running: false });
       updateBadge();
     }
-  })().finally(() => { syncRunning = null; });
+  })().finally(async () => {
+    syncRunning = null;
+    // edits made while this sync ran were not in it: don't leave them for the 15-min alarm
+    if ((await store.getSyncState()).dirty && (await davFromSettings())) scheduleSync();
+  });
   return syncRunning;
 }
 
@@ -161,7 +165,7 @@ async function checkOne(entry) {
 }
 
 function runReleaseChecks({ ids = null, force = false }) {
-  if (releasesRunning) return releasesRunning;
+  if (releasesRunning) return ids ? releasesRunning.then(() => runReleaseChecks({ ids, force })) : releasesRunning;
   releasesRunning = (async () => {
     const cfg = await store.getConfig();
     if (!cfg.releaseChecks && !force) return { skipped: true };
@@ -205,13 +209,6 @@ function scrapePage() {
   return { h1, ogTitle: meta('meta[property="og:title"]'), title: document.title, imgs: [...new Set(imgs)].slice(0, 6) };
 }
 
-/** Runs inside the page: fetch an image with the page's referrer/cookies; returns a data URL. */
-async function fetchInPage(url) {
-  const res = await fetch(url, { credentials: 'include' });
-  const blob = await res.blob();
-  return await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
-}
-
 /** Page title -> series name: drop "Read … Online", "- Arenascans"-style site suffixes. */
 export function cleanName(s, hostname = '') {
   let n = String(s || '').replace(/\s+/g, ' ').trim();
@@ -232,6 +229,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
   const { entry, match } = locate(lib0, tab.url);
   if (entry) return { already: true, id: entry.id };
   let siteId, slug;
+  if (match && match.siteId && !match.slug) throw new Error('This page is not a series or chapter page.');
   if (match && match.siteId) { siteId = match.siteId; slug = match.slug; }
   else {
     // generic site: like MangaPin's local sites, the slug is the series path on that host
@@ -247,11 +245,8 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
 
   let cover = null;
   for (const src of scraped.imgs || []) {
+    // shortcut: CDNs that require the page as Referer give no cover (the background cannot send one); pin then has no cover
     try { cover = await makeCover(await fetchImage(src)); break; } catch { /* try next */ }
-    try {
-      const [r] = await api.scripting.executeScript({ target: { tabId }, func: fetchInPage, args: [src] });
-      if (r && typeof r.result === 'string') { cover = await makeCover(await (await fetch(r.result)).blob()); break; }
-    } catch { /* try next */ }
   }
   const now = Date.now();
   return store.withLock(async () => {
@@ -348,11 +343,21 @@ const handlers = {
     const m = await store.getCovers(keys || []);
     return Object.fromEntries(m);
   },
-  async importFile({ text, mode, apply }) {
+  async importFile({ text, mode, apply, planId }) {
+    mode = mode === 'replace' ? 'replace' : 'merge';
+    // Replace decides which series exist on every device: pull the server first so series
+    // that so far only exist elsewhere are in the plan (and get deleted, not resurrected).
+    let syncWarning = '';
+    if (mode === 'replace' && (await davFromSettings())) {
+      const r = await runSync('manual');
+      if (r && r.ok === false) syncWarning = `Could not sync first (${r.error}): series that exist only on your other devices will not be removed.`;
+    }
     return store.withLock(async () => {
       const lib = await store.loadLibrary();
-      const plan = planImport(lib, new Set(await store.coverKeys()), text, mode === 'replace' ? 'replace' : 'merge');
+      const plan = planImport(lib, new Set(await store.coverKeys()), text, mode);
+      plan.summary.syncWarning = syncWarning;
       if (apply) {
+        if (planId && planId !== plan.summary.planId) throw new Error('PLAN_CHANGED: your library changed since the dry run (a sync ran). Review the new summary.');
         await store.putCovers(plan.covers);
         await store.saveLibrary(plan.lib);
       }
@@ -373,9 +378,12 @@ const handlers = {
   },
   async testConnection({ cfg, token }) {
     const saved = await store.getConfig();
+    const url = (cfg && cfg.davUrl) || saved.davUrl;
+    const origin = (u) => { try { return new URL(u).origin; } catch { return null; } };
+    if (!token && origin(url) !== origin(saved.davUrl)) return { ok: false, error: 'Enter the app token to test a different server (the saved one is only sent to the saved server).' };
     const tok = token || (await store.getToken());
     try {
-      const dav = new WebDav({ url: (cfg && cfg.davUrl) || saved.davUrl, user: (cfg && cfg.user) || saved.user, token: tok });
+      const dav = new WebDav({ url, user: (cfg && cfg.user) || saved.user, token: tok });
       const root = await dav.propfind('', 0);
       if (!root) return { ok: false, error: 'WebDAV root not found (404) — check the URL' };
       const lib = await dav.head('Shiori/library.json');
@@ -386,22 +394,23 @@ const handlers = {
   },
   async syncNow() { return runSync('manual'); },
   async checkReleases({ ids, force = true }) { return runReleaseChecks({ ids, force }); },
-  async saveLabels({ labels }) {
+  async saveLabels({ labels, base = {} }) {
     return store.withLock(async () => {
       const lib = await store.loadLibrary();
       const now = Date.now();
-      const next = { folder: {}, type: {}, tag: {} };
-      for (const kind of Object.keys(next)) {
-        for (const [k, name] of Object.entries((labels && labels[kind]) || {})) {
+      const next = structuredClone(lib.labels || { folder: {}, type: {}, tag: {} });
+      for (const kind of ['folder', 'type', 'tag']) {
+        const want = (labels && labels[kind]) || {}, was = (base && base[kind]) || {};
+        next[kind] ||= {};
+        // only what the user changed in the form; untouched rows keep whatever synced meanwhile
+        for (const k of new Set([...Object.keys(want), ...Object.keys(was)])) {
           if (!/^-?\d+$/.test(k)) continue;
-          const old = lib.labels?.[kind]?.[k];
-          const n = String(name || '').slice(0, 60);
-          next[kind][k] = old && old.name === n ? old : { name: n, ts: now };
+          const n = String(want[k] ?? '').slice(0, 60);
+          if (n === (was[k] ?? '')) continue;
+          next[kind][k] = { name: n, ts: now }; // '' = removed (syncs as a removal)
         }
-        // removed labels become empty names so the removal syncs
-        for (const k of Object.keys(lib.labels?.[kind] || {})) if (!(k in next[kind])) next[kind][k] = { name: '', ts: now };
       }
-      lib.labels = mergeLabels(next, { folder: {}, type: {}, tag: {} });
+      lib.labels = next;
       await store.saveLibrary(lib);
       return { ok: true };
     });

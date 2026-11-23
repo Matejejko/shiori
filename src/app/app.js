@@ -1,4 +1,5 @@
 import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
+import { formPatch } from '../lib/library.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { lib: null, covers: {}, st: null };
@@ -133,28 +134,30 @@ function openEditor(id) {
     endTs: h('input', { type: 'date', value: toDateInput(e.endTs) }),
     progress: h('input', { type: 'number', step: 'any', min: 0, value: numOrEmpty(e.progress?.chap) }),
   };
+  // values as shown; Save sends only what differs from this snapshot (see formPatch)
+  const readForm = () => ({
+    name: f.name.value.trim(), url: f.url.value.trim() || undefined, folder: Number(f.folder.value),
+    type: f.type.value === '' ? undefined : Number(f.type.value),
+    tags: [...f.tags.selectedOptions].map((o) => Number(o.value)).concat(f.newTag.value !== '' ? [Number(f.newTag.value)] : []),
+    score: f.score.value === '' ? undefined : Number(f.score.value),
+    startTs: f.startTs.value === toDateInput(e.startTs) ? e.startTs : fromDateInput(f.startTs.value),
+    endTs: f.endTs.value === toDateInput(e.endTs) ? e.endTs : fromDateInput(f.endTs.value),
+  });
+  const init = { ...readForm(), progress: f.progress.value };
   const msg = h('span', { class: 'small' });
   const seriesLink = safeHttpUrl(e.url || urls.series);
   const nextLink = safeHttpUrl(urls.next);
   dlg.append(h('form', { class: 'stack', attrs: { method: 'dialog' }, on: { submit: async (ev) => {
     ev.preventDefault();
     try {
-      const url = f.url.value.trim();
-      if (url && !safeHttpUrl(url)) throw new Error('URL must start with http(s)://');
-      const tags = [...f.tags.selectedOptions].map((o) => Number(o.value));
-      if (f.newTag.value !== '') tags.push(Number(f.newTag.value));
-      const patch = {
-        name: f.name.value.trim() || e.name, url: url || undefined, folder: Number(f.folder.value),
-        type: f.type.value === '' ? undefined : Number(f.type.value), tags: [...new Set(tags)],
-        score: f.score.value === '' ? undefined : Number(f.score.value),
-        startTs: fromDateInput(f.startTs.value) ?? undefined, endTs: fromDateInput(f.endTs.value) ?? undefined,
-      };
-      // keep existing exact timestamps when the day did not change
-      if (toDateInput(e.startTs) === f.startTs.value) patch.startTs = e.startTs;
-      if (toDateInput(e.endTs) === f.endTs.value) patch.endTs = e.endTs;
-      await send('edit', { id, patch });
-      const pc = f.progress.value === '' ? null : Number(f.progress.value);
-      if (pc !== null && pc !== e.progress?.chap) await send('setProgress', { id, chap: pc, manual: true });
+      if (f.url.value.trim() && !safeHttpUrl(f.url.value.trim())) throw new Error('URL must start with http(s)://');
+      const cur = readForm();
+      if (cur.name === '') cur.name = init.name; // an empty name is not a rename
+      const patch = formPatch(e, init, cur);
+      if (Object.keys(patch).length) await send('edit', { id, patch });
+      const pc = f.progress.value.trim() === '' ? null : Number(f.progress.value);
+      if (pc !== null && (!Number.isFinite(pc) || pc < 0)) throw new Error('Progress must be a chapter number');
+      if (pc !== null && f.progress.value !== init.progress) await send('setProgress', { id, chap: pc, manual: true });
       dlg.close();
       await load();
     } catch (err) { msg.textContent = err.message; msg.className = 'small err-text'; }
@@ -219,18 +222,22 @@ async function dryRun() {
   const names = (list) => h('ul', {}, list.slice(0, 200).map((x) => h('li', { text: `${x.name} (${x.siteId})` })));
   clear(box).append(h('div', { class: 'summary' },
     h('h2', { text: `Dry run — ${mode === 'replace' ? 'replace' : 'merge'}` }),
+    h('p', { class: 'muted small', text: mode === 'replace'
+      ? 'Series not in the file are deleted on all devices; series in the file are kept and merged like sync (newer reading and edits are never rolled back).'
+      : 'Series from the file are merged in like sync (newer reading and edits win).' }),
+    s.syncWarning ? h('p', { class: 'err-text small', text: s.syncWarning }) : null,
     h('dl', {},
       h('dt', { text: 'In file' }), h('dd', { text: `${s.fileEntries} entries, ${s.fileCovers} covers` }),
       h('dt', { text: 'New' }), h('dd', { text: String(s.added.length) }),
       h('dt', { text: 'Updated' }), h('dd', { text: String(s.updated.length) }),
       h('dt', { text: 'Unchanged' }), h('dd', { text: String(s.unchanged) }),
       mode === 'replace' ? [h('dt', { text: 'Removed from library' }), h('dd', { class: s.removed.length ? 'err-text' : '', text: String(s.removed.length) })] : null,
-      s.skippedDeleted.length ? [h('dt', { text: 'Skipped (you deleted them later)' }), h('dd', { text: String(s.skippedDeleted.length) })] : null,
+      s.skippedDeleted.length ? [h('dt', { text: 'Deleted here — not re-added' }), h('dd', { text: `${s.skippedDeleted.length} (use Replace to bring them back)` })] : null,
       s.restored.length ? [h('dt', { text: 'Restored (were deleted)' }), h('dd', { text: String(s.restored.length) })] : null,
       h('dt', { text: 'New covers' }), h('dd', { text: String(s.newCovers) }),
       h('dt', { text: 'Covers missing everywhere' }), h('dd', { text: `${s.missingCovers.length} (kept as references)` }),
-      s.badCovers.length ? [h('dt', { text: 'Covers failing MD5 check' }), h('dd', { class: 'err-text', text: `${s.badCovers.length} (skipped)` })] : null,
-      h('dt', { text: 'Byte-identical re-export' }), h('dd', { text: s.canonical ? 'yes' : 'no — file is not plain JSON.stringify output' }),
+      s.unverifiedCovers.length ? [h('dt', { text: 'Covers not matching their key' }), h('dd', { class: 'err-text', text: `${s.unverifiedCovers.length} (kept for export, not synced)` })] : null,
+      h('dt', { text: 'Re-export byte-identical to this file' }), h('dd', { text: s.exact ? 'yes' : 'no (other data is merged in, or the file has duplicates/odd entries)' }),
       s.duplicateSeries.length ? [h('dt', { text: 'Same series twice' }), h('dd', { text: `${s.duplicateSeries.length} (different ids, kept both)` })] : null,
       s.problemCount ? [h('dt', { text: 'Warnings' }), h('dd', { text: String(s.problemCount) })] : null,
     ),
@@ -243,11 +250,14 @@ async function dryRun() {
         if (mode === 'replace' && s.removed.length && !confirm(`This deletes ${s.removed.length} entries that are not in the file (on all synced devices). Continue?`)) return;
         ev.target.disabled = true;
         try {
-          await send('importFile', { text: fileText, mode, apply: true });
+          await send('importFile', { text: fileText, mode, apply: true, planId: s.planId });
           clear(box).append(h('p', { class: 'ok-text', text: `Imported. Library now has ${(await send('state')).count} entries.` }));
           state.covers = {};
           await load();
-        } catch (e) { box.append(h('p', { class: 'err-text', text: e.message })); ev.target.disabled = false; }
+        } catch (e) {
+          if (/^PLAN_CHANGED/.test(e.message)) { dryRun(); return; }
+          box.append(h('p', { class: 'err-text', text: e.message })); ev.target.disabled = false;
+        }
       } } }),
     ),
   ));
@@ -310,19 +320,17 @@ function formCfg() {
     token: form.token.value,
   };
 }
-async function ensureHostPermission(url) {
-  // Firefox MV3 treats host permissions as optional until granted.
-  try {
-    const origin = new URL(url).origin + '/*';
-    if (api.permissions && !(await api.permissions.contains({ origins: [origin] }))) await api.permissions.request({ origins: [origin] });
-  } catch { /* Chrome grants <all_urls> at install */ }
+function ensureHostPermission(url) {
+  // Firefox MV3 treats host permissions as optional until granted. request() must be the first
+  // await in the click handler (user gesture); it resolves true at once when already granted.
+  try { return api.permissions.request({ origins: [new URL(url).origin + '/*'] }).catch(() => false); } catch { return Promise.resolve(false); }
 }
 $('settings').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   const { cfg, token } = formCfg();
   const msg = $('settingsMsg');
   if (!safeHttpUrl(cfg.davUrl)) { msg.textContent = 'URL must be http(s)'; msg.className = 'small err-text'; return; }
-  await ensureHostPermission(cfg.davUrl);
+  await ensureHostPermission(cfg.davUrl); // first await: keeps the user gesture for Firefox
   await send('saveSettings', { cfg, token: token || undefined });
   msg.textContent = 'Saved.'; msg.className = 'small ok-text';
   renderSettings();
@@ -351,12 +359,18 @@ function labelRow(kind, key, name) {
     h('input', { class: 'grow', type: 'text', value: name, placeholder: 'name', attrs: { 'aria-label': `${kind} name` } }),
     h('button', { type: 'button', class: 'ghost', text: '✕', attrs: { 'aria-label': 'remove' }, on: { click: (ev) => ev.target.closest('.row').remove() } }));
 }
+let labelsBase = { folder: {}, type: {}, tag: {} }; // names as rendered: only changes are saved
 function renderLabels() {
   if (!state.lib) return;
+  labelsBase = { folder: {}, type: {}, tag: {} };
   for (const card of document.querySelectorAll('.labels .card')) {
     const kind = card.dataset.kind;
     const rows = clear(card.querySelector('.rows'));
-    for (const k of knownKeys(kind)) rows.append(labelRow(kind, k, labelName(state.lib.labels, kind, k) || ''));
+    for (const k of knownKeys(kind)) {
+      const n = labelName(state.lib.labels, kind, k) || '';
+      if (n) labelsBase[kind][String(k)] = n;
+      rows.append(labelRow(kind, k, n));
+    }
     card.querySelector('.add').onclick = () => rows.append(labelRow(kind, '', ''));
   }
 }
@@ -370,7 +384,7 @@ $('saveLabels').addEventListener('click', async () => {
     }
   }
   try {
-    await send('saveLabels', { labels });
+    await send('saveLabels', { labels, base: labelsBase });
     $('labelsMsg').textContent = 'Saved.'; $('labelsMsg').className = 'small ok-text';
     await load(); renderLabels();
   } catch (e) { $('labelsMsg').textContent = e.message; $('labelsMsg').className = 'small err-text'; }

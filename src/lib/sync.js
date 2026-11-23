@@ -3,7 +3,7 @@
 
 import { mergeLibraries, libraryFingerprint, metaOf, emptyLabels } from './merge.js';
 import { neededCoverKeys } from './library.js';
-import { coverKeyToFile, coverFileToKey, parseCoverKey } from './mangapin.js';
+import { coverKeyToFile, coverFileToKey, parseCoverKey, verifyCover } from './mangapin.js';
 import { md5 } from './md5.js';
 import { b64ToBytes, bytesToB64 } from './base64.js';
 import { DavError } from './webdav.js';
@@ -27,6 +27,7 @@ export function toDoc(lib, now = Date.now()) {
     labels: lib.labels || emptyLabels(),
     top: lib.top || null,
     keepImgs: lib.keepImgs || [],
+    layoutTs: lib.layoutTs || 0,
   });
 }
 
@@ -49,13 +50,15 @@ export function fromDoc(text) {
     labels: d.labels || emptyLabels(),
     top: d.top || null,
     keepImgs: Array.isArray(d.keepImgs) ? d.keepImgs : [],
+    layoutTs: typeof d.layoutTs === 'number' ? d.layoutTs : 0,
   };
 }
 
 const sameContent = (a, b) => libraryFingerprint(a) === libraryFingerprint(b)
   && JSON.stringify(a.order) === JSON.stringify(b.order)
   && JSON.stringify(a.top || null) === JSON.stringify(b.top || null)
-  && JSON.stringify(a.keepImgs || []) === JSON.stringify(b.keepImgs || []);
+  && JSON.stringify(a.keepImgs || []) === JSON.stringify(b.keepImgs || [])
+  && (a.layoutTs || 0) === (b.layoutTs || 0);
 
 /**
  * One sync round. Never throws for "nothing to do"; throws DavError on failure.
@@ -96,10 +99,6 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
     const plan = await store.withLock(async () => {
       const local = await store.loadLibrary();
       const m = remoteLib ? mergeLibraries(remoteLib, local) : local;
-      if (remoteLib) {
-        m.top = local.top || remoteLib.top || null;
-        m.keepImgs = [...new Set([...(remoteLib.keepImgs || []), ...(local.keepImgs || [])])];
-      }
       if (!sameContent(m, local)) stats.pulled = await store.saveLibrary(m, { silent: true });
       return { m, needPush: !remoteLib || !sameContent(m, remoteLib) };
     });
@@ -141,6 +140,7 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
     if (!file) continue; // not a local:<bytes>:<md5>.webp key (e.g. a plain URL) — nothing to sync
     if (localKeys.has(key) && !remoteFiles.has(file)) {
       const b64 = await store.getCover(key);
+      if (!verifyCover(key, b64)) { log(`cover ${key} does not match its key — kept locally, not uploaded`); continue; }
       const bytes = b64ToBytes(b64);
       try {
         await dav.put(`${COVERS}/${file}`, bytes, { ifNoneMatch: '*', contentType: 'image/webp' });

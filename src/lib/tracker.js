@@ -1,6 +1,6 @@
 // Tab URL -> pinned entry + chapter, and forward-only progress updates. Pure functions.
 
-import { matchUrl, sameSeries, entrySlug } from './adapters.js';
+import { matchUrl, sameSeries, entrySlug, matchChapterForSeries } from './adapters.js';
 import { setProgress } from './library.js';
 import { withField } from './mangapin.js';
 
@@ -24,38 +24,58 @@ export function locate(lib, url) {
   const match = matchUrl(url);
   const entries = [...lib.entries.values()];
   if (match) {
-    if (!match.slug) return { entry: null, match };
-    const entry = entries.find((e) => e.siteId === match.siteId && sameSeries(e.siteId, entrySlug(e), match.slug)) || null;
-    return { entry, match };
+    const entry = match.slug ? entries.find((e) => e.siteId === match.siteId && sameSeries(e.siteId, entrySlug(e), match.slug)) : null;
+    if (entry) return { entry, match };
+    // slug-aware parse against pinned series of this site ("/kaiju-no-8-12/" is ambiguous alone)
+    for (const e of entries) {
+      if (e.siteId !== match.siteId) continue;
+      const hit = matchChapterForSeries(url, e.siteId, entrySlug(e));
+      if (hit) return { entry: e, match: hit };
+    }
+    return { entry: null, match };
   }
   // Generic sites: siteId is the hostname and MangaPin's slug is usually the full path (or a
-  // URL); otherwise fall back to the stored url or the slug as a path segment.
+  // URL); otherwise the stored url, or the slug as a whole path segment. A match must be the
+  // whole series path followed by nothing, "/…", or "-chapter-N" — "/read/solo-leveling" must
+  // not swallow "/read/solo-leveling-ragnarok/chapter-60". The longest match wins.
   let u;
   try { u = new URL(url); } catch { return { entry: null, match: null }; }
   const host = bareHost(u.hostname);
-  const path = u.pathname;
+  let path = u.pathname;
+  try { path = decodeURI(path); } catch { /* keep raw */ }
+  let best = null;
   for (const e of entries) {
     if (typeof e.siteId !== 'string' || bareHost(e.siteId.toLowerCase()) !== host) continue;
     const s = String(e.slug ?? '');
     const prefixes = [];
-    if (/^https?:\/\//i.test(s)) { try { prefixes.push(new URL(s).pathname); } catch { /* ignore */ } }
+    if (/^https?:\/\//i.test(s)) { try { prefixes.push(decodeURI(new URL(s).pathname)); } catch { /* ignore */ } }
     else if (s.startsWith('/')) prefixes.push(s);
-    if (typeof e.url === 'string') { try { prefixes.push(new URL(e.url).pathname); } catch { /* ignore */ } }
-    let rest = null;
+    if (typeof e.url === 'string') { try { prefixes.push(decodeURI(new URL(e.url).pathname)); } catch { /* ignore */ } }
     for (const p0 of prefixes) {
       const p = p0.replace(/\/+$/, '');
-      if (p && (path === p || path === p + '/' || path.startsWith(p + '/') || path.startsWith(p + '-'))) { rest = path.slice(p.length); break; }
+      if (!p) continue;
+      const rest = seriesRest(path, p);
+      if (rest !== null && (!best || p.length > best.len)) best = { e, rest, len: p.length };
     }
-    if (rest === null && s && !s.includes('/')) {
+    if (s && !s.includes('/')) {
       const i = path.indexOf('/' + s);
-      const after = i >= 0 ? path[i + 1 + s.length] : undefined;
-      if (i >= 0 && (after === undefined || after === '/' || after === '-')) rest = path.slice(i + 1 + s.length);
+      if (i >= 0) {
+        const rest = seriesRest(path.slice(i), '/' + s);
+        if (rest !== null && (!best || s.length + 1 > best.len)) best = { e, rest, len: s.length + 1 };
+      }
     }
-    if (rest === null) continue;
-    const chap = genericChapter(rest);
-    return { entry: e, match: { siteId: e.siteId, slug: e.slug, kind: chap === null ? 'series' : 'chapter', chap: chap ?? undefined, generic: true } };
   }
-  return { entry: null, match: null };
+  if (!best) return { entry: null, match: null };
+  const chap = genericChapter(best.rest);
+  return { entry: best.e, match: { siteId: best.e.siteId, slug: best.e.slug, kind: chap === null ? 'series' : 'chapter', chap: chap ?? undefined, generic: true } };
+}
+
+/** If `path` is the series path `p` (or below it), the remainder; else null. */
+function seriesRest(path, p) {
+  if (path === p || path === p + '/') return '';
+  if (path.startsWith(p + '/')) return path.slice(p.length);
+  if (path.startsWith(p + '-') && /^-(?:chapter|chap|ch|episode|ep)[-_.]?\d/i.test(path.slice(p.length))) return path.slice(p.length);
+  return null;
 }
 
 /**

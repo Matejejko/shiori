@@ -17,7 +17,9 @@ loads in Firefox 128+.
   for site access separately: Library → Settings shows a *Grant access* button when it is missing.
 
 Permissions: `storage`, `unlimitedStorage`, `alarms`, `tabs` (tab URLs, for tracking), `scripting`
-(read the series name and cover when pinning), and host access (release checks, covers, your server).
+(read the series name and cover URL when pinning), and host access (release checks, covers, your server).
+All network requests come from the background worker; covers from CDNs that insist on the page as Referer
+can't be fetched, and such series are pinned without a cover.
 
 ## Set up sync
 
@@ -29,7 +31,9 @@ Permissions: `storage`, `unlimitedStorage`, `alarms`, `tabs` (tab URLs, for trac
    - `library.json` — entries (verbatim MangaPin objects) + tombstones + labels + merge metadata
    - `covers/<bytes>-<md5>.webp` — content-addressed covers, uploaded once
 
-The token is stored only in `chrome.storage.local` (`secret`), never in synced data, never logged.
+The token is stored only in `chrome.storage.local` (`secret`), never in synced data, never logged, only
+sent over https (plain http is refused except to `localhost`), and *Test connection* never sends the saved
+token to a different server than the saved one.
 
 ### ⚠️ Your server's certificate will block this as configured
 
@@ -66,7 +70,7 @@ associative and idempotent (property-tested), and every device converges.
 
 | group | rule |
 |---|---|
-| `progress` | max by **(epoch, chap, ts)** |
+| `progress` | furthest chapter read **since the last manual correction** |
 | `latest` | max by (chap, ts) |
 | `next` | max by ts |
 | everything else | whole group from the side with the newer *rest time* |
@@ -75,19 +79,33 @@ associative and idempotent (property-tested), and every device converges.
 
 Two deliberate deviations from "progress by newer progress.ts, rest by newer ts":
 
-1. **Progress epochs.** Plain "newer progress.ts wins" regresses progress in exactly your setup: the
-   desktop that was offline for days reads chapter 35 of a series you already finished to 50 on the
-   laptop → its *newer* chapter 35 wins. Now auto-tracked progress within the same epoch compares by
-   chapter, so that can't happen; a manual correction (popup/editor "Set") starts a new epoch and wins
-   even if it goes backwards, and reading continues from it.
+1. **Progress = furthest read since your last correction.** Plain "newer progress.ts wins" regresses
+   progress in exactly your setup: the desktop that was offline for days reads chapter 35 of a series
+   you already read to 50 on the laptop → its *newer* chapter 35 wins. Shiori treats every progress value
+   as a read event and takes the highest chapter among events at or after the latest manual correction
+   (popup/editor "Set"). So stale reads can't pull you back, a correction wins even when it goes backwards,
+   and reads made after a correction on a device that hadn't seen it yet still count. To stay associative it
+   keeps the few non-dominated (chapter, time) events in the sidecar (`pf`); with forward-only tracking that
+   list is almost always empty.
 2. **Rest time ≠ entry.ts.** Release checks and tracking must bump `entry.ts` (MangaPin's invariant
    `ts ≥ nested ts`). With "rest by newer ts", a release check on the desktop would silently overwrite a
    folder/tag edit made on the offline laptop. Shiori keeps the time of the last *user edit* of the rest
    fields in a sidecar (`meta.r`), only in its own storage and `library.json` — never in MangaPin exports.
 
-Import modes: **merge** (file entries merge in; progress joins your current epoch only if it is newer
-than your last manual correction) and **replace** (the file becomes the truth as of now: its entries win
-the next sync, everything not in the file is tombstoned on all devices). Both show a dry-run summary first.
+Import modes (both show a dry-run summary first; applying re-checks it and asks again if a sync changed
+the library meanwhile):
+
+- **merge**: file entries merge in exactly like a sync. Series you deleted here are *not* re-added.
+  For series in both, MangaPin's `ts` counts as the edit time of name/folder/tags (MangaPin also bumps
+  `ts` on its own release checks, so a later MangaPin export can win over an older Shiori edit).
+- **replace**: the file decides *which series exist*: everything not in the file is deleted on all devices,
+  deleted series in the file come back, and the file's order becomes the library's. Shiori syncs first, so
+  series that so far only exist on another device are included. Per entry it still merges like sync: it never
+  rolls back reading or newer edits.
+
+Covers whose bytes don't match their `local:<bytes>:<md5>.webp` key are kept for export but not synced
+(the dry run counts them). If your real export shows many of those, MangaPin derives the key differently
+than assumed here — tell me.
 
 ### OpenCloud quirk you should know about
 

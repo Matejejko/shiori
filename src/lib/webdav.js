@@ -34,6 +34,8 @@ export class WebDav {
     let u;
     try { u = new URL(url); } catch { throw new DavError('Server URL is not a valid URL', 0, 'config'); }
     if (u.protocol !== 'https:' && u.protocol !== 'http:') throw new DavError('Server URL must be http(s)', 0, 'config');
+    // Basic auth sends the token in clear text over http: only allowed for this machine
+    if (u.protocol === 'http:' && !['localhost', '127.0.0.1', '[::1]'].includes(u.hostname)) throw new DavError('Server URL must use https:// (the app token would travel unencrypted)', 0, 'config');
     this.root = u.href.endsWith('/') ? u.href : u.href + '/';
     this.auth = 'Basic ' + utf8b64(`${user}:${token}`);
     this.fetch = f || globalThis.fetch.bind(globalThis);

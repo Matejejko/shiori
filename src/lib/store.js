@@ -3,7 +3,7 @@
 // Layout (all values JSON-safe; entries are stored as *strings* because
 // chrome.storage.local returns objects with alphabetically sorted keys):
 //   e:<id>      raw JSON string of the entry, verbatim
-//   lib         { order, meta:{id:{r,pe}}, tombs:{id:ts}, labels, top, keepImgs }
+//   lib         { order, meta:{id:{r,pm?,u,pf?}}, tombs:{id:ts}, labels, top, keepImgs, layoutTs }
 //   c:<key>     base64 WebP for cover key "local:<bytes>:<md5>.webp"
 //   cidx        array of cover keys present locally
 //   cfg         settings (never contains the token)
@@ -13,7 +13,7 @@
 
 import { emptyLabels } from './merge.js';
 
-const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), top: null, keepImgs: [] });
+const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), top: null, keepImgs: [], layoutTs: 0 });
 
 export const DEFAULT_CFG = {
   davUrl: '',          // full WebDAV root of the user's space, e.g. https://host/remote.php/webdav/
@@ -27,6 +27,7 @@ export class Store {
   constructor(area) {
     this.area = area;
     this._lock = Promise.resolve();
+    this._small = Promise.resolve(); // serialises read-modify-write of small shared keys (cidx, sync)
     this.onChange = null; // (what) => void, set by background to schedule sync / badge
   }
 
@@ -34,6 +35,12 @@ export class Store {
   withLock(fn) {
     const run = this._lock.then(fn, fn);
     this._lock = run.catch(() => {});
+    return run;
+  }
+
+  _serial(fn) {
+    const run = this._small.then(fn, fn);
+    this._small = run.catch(() => {});
     return run;
   }
 
@@ -63,6 +70,7 @@ export class Store {
       labels: idx.labels || emptyLabels(),
       top: idx.top || null,
       keepImgs: idx.keepImgs || [],
+      layoutTs: idx.layoutTs || 0,
     };
   }
 
@@ -87,6 +95,7 @@ export class Store {
       labels: lib.labels || emptyLabels(),
       top: lib.top || null,
       keepImgs: lib.keepImgs || [],
+      layoutTs: lib.layoutTs || 0,
     };
     if (!silent) {
       const { dseq } = await this.area.get('dseq');
@@ -120,21 +129,25 @@ export class Store {
     return out;
   }
   /** @param {Map<string,string>|Array<[string,string]>} covers key -> base64 */
-  async putCovers(covers) {
+  putCovers(covers) {
     const list = [...covers];
-    if (!list.length) return;
-    const have = new Set(await this.coverKeys());
-    const writes = {};
-    for (const [k, v] of list) { writes['c:' + k] = v; have.add(k); }
-    writes.cidx = [...have];
-    await this.area.set(writes);
+    if (!list.length) return Promise.resolve();
+    return this._serial(async () => {
+      const have = new Set(await this.coverKeys());
+      const writes = {};
+      for (const [k, v] of list) { writes['c:' + k] = v; have.add(k); }
+      writes.cidx = [...have];
+      await this.area.set(writes);
+    });
   }
-  async removeCovers(keys) {
-    if (!keys.length) return;
-    const drop = new Set(keys);
-    const cidx = (await this.coverKeys()).filter((k) => !drop.has(k));
-    await this.area.remove(keys.map((k) => 'c:' + k));
-    await this.area.set({ cidx });
+  removeCovers(keys) {
+    if (!keys.length) return Promise.resolve();
+    return this._serial(async () => {
+      const drop = new Set(keys);
+      const cidx = (await this.coverKeys()).filter((k) => !drop.has(k));
+      await this.area.remove(keys.map((k) => 'c:' + k));
+      await this.area.set({ cidx });
+    });
   }
 
   // ---- settings / secret / sync state --------------------------------------------------
@@ -163,12 +176,14 @@ export class Store {
     st.dirty = st.seq > st.syncedSeq;
     return st;
   }
-  async setSyncState(patch) {
-    const { sync } = await this.area.get('sync');
-    const next = { ...(sync || {}), ...patch };
-    delete next.seq; delete next.dirty; // derived
-    await this.area.set({ sync: next });
-    return next;
+  setSyncState(patch) {
+    return this._serial(async () => {
+      const { sync } = await this.area.get('sync');
+      const next = { ...(sync || {}), ...patch };
+      delete next.seq; delete next.dirty; // derived
+      await this.area.set({ sync: next });
+      return next;
+    });
   }
 }
 

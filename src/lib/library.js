@@ -1,17 +1,10 @@
 // Pure library operations: import planning (dry run + apply), export, local edits.
 
-import { parseExport, serializeExport, referencedImgKeys, verifyCover, parseCoverKey, withField, ID_RE } from './mangapin.js';
-import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels, canonical } from './merge.js';
+import { parseExport, serializeExport, referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
+import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels } from './merge.js';
 
 export function emptyLibrary() {
-  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), top: null, keepImgs: [] };
-}
-
-function cloneLib(lib) {
-  return {
-    order: [...lib.order], entries: new Map(lib.entries), meta: new Map(lib.meta), tombs: new Map(lib.tombs),
-    labels: lib.labels || emptyLabels(), top: lib.top || null, keepImgs: [...(lib.keepImgs || [])],
-  };
+  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), top: null, keepImgs: [], layoutTs: 0 };
 }
 
 /** Library built from a parsed export (duplicate ids inside the file are merged). */
@@ -35,11 +28,30 @@ function libFromParsed(parsed, metaFor) {
 
 const short = (e) => ({ id: e.id, name: typeof e.name === 'string' ? e.name : '', siteId: e.siteId });
 
+/** Short stable fingerprint of what an import will do (dry run vs apply must agree). */
+function planId(mode, summary) {
+  const ids = (l) => l.map((x) => x.id).sort().join(',');
+  const s = `${mode}|a:${ids(summary.added)}|u:${ids(summary.updated)}|r:${ids(summary.removed)}|s:${ids(summary.skippedDeleted)}|x:${ids(summary.restored)}`;
+  let h = 2166136261;
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619) >>> 0;
+  return h.toString(36) + '-' + s.length.toString(36);
+}
+
 /**
- * Dry-run an import. Nothing is written; call applyImport() with the returned plan.
- * @param {object} local         current library
+ * Plan an import (dry run). Nothing is written; the caller persists `lib` + `covers`.
+ *
+ * merge:   file entries merge into the library entry by entry (newer edits / furthest reading
+ *          win, exactly like sync). Series you deleted here are NOT re-added.
+ * replace: the file decides which series exist: series not in the file are deleted (on every
+ *          device), deleted series that are in the file come back, and the file's order/layout
+ *          becomes the library's. Per entry it still merges like sync, so it never rolls back
+ *          reading or newer edits on another device. The background syncs first so that the
+ *          plan sees series that so far only exist on other devices.
+ * Both make this device's layout (order, top-level keys, orphan covers) authoritative.
+ *
+ * @param {object} local             current library
  * @param {Set<string>} localCovers  cover keys present locally
- * @param {string} text          file contents
+ * @param {string} text              file contents
  * @param {'merge'|'replace'} mode
  */
 export function planImport(local, localCovers, text, mode, now = Date.now()) {
@@ -48,60 +60,54 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
     mode,
     fileEntries: parsed.entries.length,
     fileCovers: parsed.imgs.size,
-    canonical: parsed.canonical,
+    exact: false,
     problems: parsed.problems.slice(0, 50),
     problemCount: parsed.problems.length,
     added: [], updated: [], unchanged: 0, removed: [], skippedDeleted: [], restored: [],
-    missingCovers: [], badCovers: [], newCovers: 0, duplicateSeries: [],
+    missingCovers: [], unverifiedCovers: [], newCovers: 0, duplicateSeries: [],
   };
 
-  // cover integrity: key must be local:<decoded byte length>:<md5 of decoded bytes>.webp
+  // Cover keys should be local:<bytes>:<md5>.webp of the data. Covers that do not verify are
+  // still kept verbatim (the key derivation is MangaPin's, not ours) but are not synced.
   for (const [k, v] of parsed.imgs) {
-    if (!parseCoverKey(k) || !verifyCover(k, v)) summary.badCovers.push(k);
-    else if (!localCovers.has(k)) summary.newCovers++;
+    if (!localCovers.has(k)) summary.newCovers++;
+    if (!verifyCover(k, v)) summary.unverifiedCovers.push(k);
   }
 
+  // A file entry's rest fields carry MangaPin's ts; its progress is a plain read event.
+  const file = libFromParsed(parsed, (obj) => ({ r: typeof obj.ts === 'number' ? obj.ts : 0 }));
   let lib;
   if (mode === 'replace') {
-    // "Replace" means: the file is the truth as of now. Its entries get rest/progress
-    // times of `now` in the sidecar so they win the next sync against the server, and every
-    // local entry missing from the file gets a tombstone so the removal propagates too.
-    const file = libFromParsed(parsed, () => ({ r: now, pe: now, u: now }));
-    lib = cloneLib(file);
-    lib.labels = local.labels || emptyLabels();
-    lib.tombs = new Map(local.tombs);
+    const keep = new Set(file.entries.keys());
+    const tombs = new Map(local.tombs);
     for (const [id, e] of local.entries) {
-      if (!file.entries.has(id)) {
-        lib.tombs.set(id, Math.max(now, editTs(e, local.meta.get(id)) + 1));
-        summary.removed.push(short(e));
-      }
+      if (keep.has(id)) continue;
+      tombs.set(id, Math.max(now, editTs(e, local.meta.get(id)) + 1));
+      summary.removed.push(short(e));
     }
-    for (const [id, e] of file.entries) {
-      if (local.tombs.has(id) && !local.entries.has(id)) summary.restored.push(short(e));
-      lib.tombs.delete(id); // remote tombstones are older than `now`, so the entry survives sync
-      const le = local.entries.get(id);
-      if (!le) summary.added.push(short(e));
-      else if (JSON.stringify(le) !== JSON.stringify(e)) summary.updated.push(short(e));
-      else summary.unchanged++;
+    for (const id of keep) {
+      if (local.tombs.has(id) && !local.entries.has(id)) summary.restored.push(short(file.entries.get(id)));
+      tombs.delete(id);
+      // keeping/restoring a series is a user decision as of now: it must outlive any
+      // tombstone another device still has (u only decides deletes, not field values)
+      file.meta.set(id, { ...file.meta.get(id), u: now });
     }
+    const kept = { ...local, entries: new Map([...local.entries].filter(([id]) => keep.has(id))), tombs: new Map() };
+    const merged = mergeLibraries(file, kept);
+    lib = { ...merged, tombs, labels: local.labels || emptyLabels(), top: parsed.top, keepImgs: file.keepImgs, order: file.order.filter((id) => merged.entries.has(id)), layoutTs: now };
   } else {
-    // A file entry's progress joins the local progress epoch if it was recorded after the
-    // last local manual correction (it continued from it); otherwise it is older (epoch 0).
-    const file = libFromParsed(parsed, (obj) => {
-      const lm = local.entries.has(obj.id) ? metaOf(local.entries.get(obj.id), local.meta.get(obj.id)) : null;
-      const pts = obj.progress && typeof obj.progress.ts === 'number' ? obj.progress.ts : -Infinity;
-      return { r: typeof obj.ts === 'number' ? obj.ts : 0, pe: lm && pts >= lm.pe ? lm.pe : 0 };
-    });
-    const merged = mergeLibraries(local, file);
-    lib = { ...merged, top: local.top || parsed.top, keepImgs: [...new Set([...(local.keepImgs || []), ...file.keepImgs])] };
-    for (const [id, e] of file.entries) {
-      const le = local.entries.get(id);
-      const me = merged.entries.get(id);
-      if (!me) { summary.skippedDeleted.push(short(e)); continue; }
-      if (!le) summary.added.push(short(e));
-      else if (JSON.stringify(le) !== JSON.stringify(me) || canonical(metaOf(le, local.meta.get(id))) !== canonical(merged.meta.get(id))) summary.updated.push(short(e));
-      else summary.unchanged++;
-    }
+    const skip = new Set([...file.entries.keys()].filter((id) => local.tombs.has(id) && !local.entries.has(id)));
+    for (const id of skip) { summary.skippedDeleted.push(short(file.entries.get(id))); file.entries.delete(id); file.meta.delete(id); }
+    file.order = file.order.filter((id) => !skip.has(id));
+    const merged = mergeLibraries({ ...local, layoutTs: now }, { ...file, layoutTs: 0 });
+    lib = { ...merged, top: local.top || parsed.top, keepImgs: [...new Set([...(local.keepImgs || []), ...file.keepImgs])], layoutTs: now };
+  }
+  for (const [id, e] of file.entries) {
+    const le = local.entries.get(id);
+    const me = lib.entries.get(id);
+    if (!le) { if (!summary.restored.some((x) => x.id === id)) summary.added.push(short(e)); }
+    else if (JSON.stringify(le) !== JSON.stringify(me)) summary.updated.push(short(e));
+    else summary.unchanged++;
   }
 
   // covers referenced but present neither in the file nor locally (tolerated, preserved)
@@ -119,7 +125,13 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
   }
   for (const list of bySeries.values()) if (list.length > 1) summary.duplicateSeries.push(list.map(short));
 
-  const covers = new Map([...parsed.imgs].filter(([k]) => !localCovers.has(k) && !summary.badCovers.includes(k)));
+  // "re-export is byte-identical" only when the file is plain JSON.stringify output, every entry
+  // survived parsing (string ids, no duplicates) and, for replace, nothing else gets merged in
+  summary.exact = parsed.canonical && !parsed.duplicateIds && !parsed.droppedEntries
+    && (mode === 'replace' ? summary.updated.length === 0 : local.entries.size === 0);
+  summary.planId = planId(mode, summary);
+
+  const covers = new Map([...parsed.imgs].filter(([k]) => !localCovers.has(k)));
   return { summary, lib, covers };
 }
 
@@ -161,24 +173,48 @@ export function editEntry(lib, id, patch, now = Date.now()) {
   let out = e;
   for (const [k, v] of Object.entries(patch)) {
     if (k === 'progress' || k === 'latest' || k === 'next' || k === 'ts' || k === 'id' || k === 'createTs') continue;
-    if (v === undefined) { if (k in out) { out = { ...out }; delete out[k]; } }
+    if (v === undefined) { if (Object.prototype.hasOwnProperty.call(out, k)) { out = { ...out }; delete out[k]; } }
     else out = withField(out, k, v);
   }
-  const ts = Math.max(now, e.ts || 0);
+  const ts = now > (e.ts || 0) ? now : (e.ts || 0) + 1;
   out = withField(out, 'ts', ts);
   lib.entries.set(id, out);
   const m = metaOf(e, lib.meta.get(id));
-  lib.meta.set(id, { r: ts, pe: m.pe, u: Math.max(m.u, ts) });
+  lib.meta.set(id, { ...m, r: ts, u: Math.max(m.u, ts) });
   return out;
 }
 
 /**
- * Set progress. `manual` = a deliberate correction (may go backwards, starts a new epoch);
- * otherwise forward-only (auto-tracking). Returns true if the entry changed.
+ * Editor form -> patch with only the fields the user actually changed. `initial` and
+ * `current` are the form values when the dialog opened and on Save, so an untouched Save is
+ * a no-op and a field edited elsewhere meanwhile is not overwritten with a stale value.
+ * Tags keep the entry's own order for kept tags (MangaPin stores them unsorted).
+ */
+export function formPatch(entry, initial, current) {
+  const patch = {};
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  for (const k of Object.keys(current)) {
+    if (k === 'tags') {
+      const was = [...initial.tags].sort((a, b) => a - b), now = [...new Set(current.tags)].sort((a, b) => a - b);
+      if (same(was, now)) continue;
+      const keep = new Set(now);
+      const own = (Array.isArray(entry.tags) ? entry.tags : []).filter((t) => keep.has(t));
+      patch.tags = [...own, ...now.filter((t) => !own.includes(t))];
+    } else if (!same(initial[k], current[k])) {
+      patch[k] = current[k];
+    }
+  }
+  return patch;
+}
+
+/**
+ * Set progress. `manual` = a deliberate correction (may go backwards; becomes the new
+ * reference point, see merge.js); otherwise forward-only (auto-tracking).
+ * Returns true if the entry changed.
  */
 export function setProgress(lib, id, chap, { manual = false, slug, now = Date.now() } = {}) {
   const e = lib.entries.get(id);
-  if (!e || typeof chap !== 'number' || !Number.isFinite(chap)) return false;
+  if (!e || typeof chap !== 'number' || !Number.isFinite(chap) || chap < 0) return false;
   const cur = e.progress;
   if (!manual && cur && typeof cur.chap === 'number' && chap <= cur.chap) return false;
   if (manual && cur && cur.chap === chap) return false;
@@ -190,7 +226,12 @@ export function setProgress(lib, id, chap, { manual = false, slug, now = Date.no
   out = withField(out, 'ts', ts);
   lib.entries.set(id, out);
   const m = metaOf(e, lib.meta.get(id));
-  lib.meta.set(id, { r: m.r, pe: manual ? ts : m.pe, u: Math.max(m.u, ts) });
+  // the new read is newer than every earlier event and (auto) further than all of them,
+  // so it dominates the whole frontier
+  const meta = { r: m.r, u: Math.max(m.u, ts) };
+  if (manual) meta.pm = ts;
+  else if (m.pm !== undefined) meta.pm = m.pm;
+  lib.meta.set(id, meta);
   return true;
 }
 
@@ -207,7 +248,7 @@ export function deleteEntry(lib, id, now = Date.now()) {
 /** Add a new entry (already in MangaPin shape). Returns it. */
 export function addEntry(lib, entry, now = Date.now()) {
   lib.entries.set(entry.id, entry);
-  lib.meta.set(entry.id, metaOf(entry, { r: entry.ts ?? now, pe: 0 }));
+  lib.meta.set(entry.id, metaOf(entry, { r: entry.ts ?? now }));
   lib.order.push(entry.id); // appended, like sync does for entries the server has not seen
   return entry;
 }
