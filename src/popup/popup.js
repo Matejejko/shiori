@@ -1,4 +1,4 @@
-import { api, h, clear, send, fmtChap, coverUrl, syncSummary, folderName } from '../ui/dom.js';
+import { api, h, clear, send, fmtChap, coverUrl, syncSummary, folderName, safeHttpUrl } from '../ui/dom.js';
 
 const $ = (id) => document.getElementById(id);
 let tabId = null;
@@ -43,8 +43,10 @@ async function renderCurrent(lib, covers) {
       ),
       h('form', { class: 'row tight', on: { submit: async (ev) => {
         ev.preventDefault();
+        const chap = input.value.trim() === '' ? NaN : Number(input.value);
+        if (!Number.isFinite(chap) || chap < 0) { msg.textContent = 'Enter a chapter number'; return; }
         try {
-          const r = await send('setProgress', { id: e.id, chap: Number(input.value), manual: true });
+          const r = await send('setProgress', { id: e.id, chap, manual: true });
           msg.textContent = r.ok ? 'Saved' : 'Unchanged';
           refresh();
         } catch (err) { msg.textContent = err.message; }
@@ -54,6 +56,10 @@ async function renderCurrent(lib, covers) {
     return;
   }
 
+  if (cur.match && cur.match.siteId && !cur.match.slug) {
+    box.append(h('div', { class: 'title', text: cur.site }), h('p', { class: 'muted small', text: 'Open a series or chapter page to pin or track it.' }));
+    return;
+  }
   if (cur.match || cur.url) {
     const supported = !!(cur.match && cur.match.siteId);
     const name = h('input', { type: 'text', placeholder: 'Name (leave empty: taken from the page)', attrs: { 'aria-label': 'Name' }, class: 'grow' });
@@ -87,7 +93,7 @@ async function renderUnread(lib, covers, cfg) {
   if (!list.length) { ul.append(h('li', { class: 'muted small', text: 'Nothing new. Release checks run every 6 h.' })); return; }
   for (const e of list) {
     const u = lib.urls[e.id] || {};
-    const target = u.next || u.series;
+    const target = safeHttpUrl(u.next) || safeHttpUrl(u.series);
     const behind = e.latest.chap - e.progress.chap;
     ul.append(h('li', {},
       h('a', { class: 'row item', href: target || undefined, on: { click: (ev) => { ev.preventDefault(); if (target) api.tabs.create({ url: target }); } } },

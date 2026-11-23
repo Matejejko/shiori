@@ -77,6 +77,24 @@ export function matchUrl(url) {
   return { siteId: a.id, slug: null, kind: null };
 }
 
+/**
+ * Parse a chapter URL *for a known series* (sites whose chapter paths do not delimit the slug,
+ * e.g. MangaThemesia "/{title}-{N}/"). Returns a matchUrl-shaped chapter match or null.
+ */
+export function matchChapterForSeries(url, siteId, slug) {
+  const a = getAdapter(siteId);
+  if (!a || !a.chapterForSlug || !slug) return null;
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  if (!compiled(a.id).hosts.includes(bare(u.hostname))) return null;
+  let path = u.pathname;
+  try { path = decodeURI(path); } catch { /* keep raw */ }
+  const m = new RegExp(a.chapterForSlug(String(slug).toLowerCase()), 'i').exec(path);
+  if (!m) return null;
+  const chap = parseChapNumber(m.groups.chap);
+  return chap === null ? null : { siteId: a.id, slug, kind: 'chapter', chap, chapSlug: m.groups.cslug };
+}
+
 /** The series slug of an entry, resolving MangaPin's URL-or-path slugs for known sites. */
 export function entrySlug(entry) {
   const s = String(entry.slug ?? '');
@@ -192,9 +210,9 @@ export function extractChapterLinks(entry, text, baseUrl) {
     let u;
     try { u = new URL(m[0], baseUrl || `https://${a.host}/`); } catch { continue; }
     if (!hosts.includes(bare(u.hostname))) continue;
-    const hit = matchUrl(u.href);
+    let hit = matchUrl(u.href);
+    if (!hit || hit.kind !== 'chapter' || hit.chap === null || slugKey(a.id, hit.slug) !== want) hit = matchChapterForSeries(u.href, a.id, entry.slug);
     if (!hit || hit.kind !== 'chapter' || hit.chap === null) continue;
-    if (slugKey(a.id, hit.slug) !== want) continue;
     if (!out.has(hit.chap)) out.set(hit.chap, { chap: hit.chap, slug: hit.chapSlug, id: hit.cid, url: u.href });
   }
   return [...out.values()];

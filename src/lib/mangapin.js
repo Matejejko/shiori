@@ -32,11 +32,12 @@ export function coverFileToKey(name) {
   const m = COVER_FILE_RE.exec(name);
   return m ? `local:${m[1]}:${m[2]}.webp` : null;
 }
-/** true if base64 payload decodes to bytes whose length+md5 match the key */
+/** true if the base64 payload decodes to bytes whose length + MD5 match the key */
 export function verifyCover(key, b64) {
   const p = parseCoverKey(key);
   if (!p) return false;
-  const bytes = b64ToBytes(b64);
+  let bytes;
+  try { bytes = b64ToBytes(b64); } catch { return false; }
   return bytes.length === p.bytes && md5(bytes) === p.md5;
 }
 
@@ -45,12 +46,15 @@ export function exportFileName(d = new Date()) {
   return `MangaPin${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}.json`;
 }
 
+// defineProperty, not assignment: an own "__proto__" key (JSON.parse creates one) must stay data
+const put = (o, k, v) => Object.defineProperty(o, k, { value: v, enumerable: true, writable: true, configurable: true });
+
 /** Insert `key: value` into obj respecting ENTRY_FIELD_ORDER if the key is new;
  *  replace in place otherwise. Returns a new object (key order deterministic). */
 export function withField(obj, key, value) {
   if (Object.prototype.hasOwnProperty.call(obj, key)) {
     const out = {};
-    for (const k of Object.keys(obj)) out[k] = k === key ? value : obj[k];
+    for (const k of Object.keys(obj)) put(out, k, k === key ? value : obj[k]);
     return out;
   }
   const rank = ENTRY_FIELD_ORDER.indexOf(key);
@@ -58,10 +62,10 @@ export function withField(obj, key, value) {
   let placed = false;
   for (const k of Object.keys(obj)) {
     const r = ENTRY_FIELD_ORDER.indexOf(k);
-    if (!placed && rank !== -1 && r !== -1 && r > rank) { out[key] = value; placed = true; }
-    out[k] = obj[k];
+    if (!placed && rank !== -1 && r !== -1 && r > rank) { put(out, key, value); placed = true; }
+    put(out, k, obj[k]);
   }
-  if (!placed) out[key] = value;
+  if (!placed) put(out, key, value);
   return out;
 }
 
@@ -110,11 +114,12 @@ export function parseExport(text) {
 
   const entries = [];
   const seen = new Set();
+  let duplicateIds = 0, droppedEntries = 0;
   data.entries.forEach((obj, i) => {
     const errs = validateEntry(obj);
     for (const e of errs) problems.push(`entry #${i}${obj && obj.name ? ` (${String(obj.name).slice(0, 40)})` : ''}: ${e}`);
-    if (!obj || typeof obj !== 'object' || typeof obj.id !== 'string') return; // unusable without an id
-    if (seen.has(obj.id)) problems.push(`entry #${i}: duplicate id ${obj.id} (will be merged)`);
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj) || typeof obj.id !== 'string') { droppedEntries++; return; } // unusable without an id
+    if (seen.has(obj.id)) { duplicateIds++; problems.push(`entry #${i}: duplicate id ${obj.id} (will be merged)`); }
     seen.add(obj.id);
     entries.push({ id: obj.id, raw: JSON.stringify(obj), obj });
   });
@@ -125,7 +130,7 @@ export function parseExport(text) {
     if (!parseCoverKey(k)) problems.push(`imgs key ${k} is not local:<bytes>:<md5>.webp`);
     imgs.set(k, v);
   }
-  return { version: data.version, entries, imgs, top, problems, canonical: JSON.stringify(data) === text };
+  return { version: data.version, entries, imgs, top, problems, canonical: JSON.stringify(data) === text, duplicateIds, droppedEntries };
 }
 
 /** Image keys referenced by entries, in first-reference order. */

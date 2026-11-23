@@ -29,6 +29,11 @@ const stripThemesiaId = (s) => s.replace(/^\d{9,12}-/, '').replace(/-?\d{9,12}$/
 // Asura: "title-7de80a82" — 8-hex suffix that the site rotates.
 const stripAsuraHash = (s) => s.replace(/-[0-9a-f]{8}$/, '');
 
+// When the series is known, a root-level chapter path is unambiguous: "/{id-}{title}-{N}/".
+const reEscape = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const themesiaChapterForSlug = (slug) =>
+  `^/(?<cslug>(?:\\d{9,12}-)?${reEscape(stripThemesiaId(slug))}-(?:chapter-)?(?<chap>${NUM_DASH}))/?$`;
+
 const json = (text) => { try { return JSON.parse(text); } catch { return null; } };
 
 export const SITES = {
@@ -71,12 +76,13 @@ export const SITES = {
     seriesRe: [`^/comics/(?<slug>${SEG})/?$`],
     chapterRe: [
       `^/(?<cslug>(?<slug>[a-z0-9-]+?)-chapter-(?<chap>${NUM_DASH}))/?$`,
-      `^/(?<cslug>\\d{9,12}-(?<slug>[a-z0-9-]+?)-(?<chap>${NUM_DASH}))/?$`, // some chapters drop "chapter-"
+      `^/(?<cslug>\\d{9,12}-(?<slug>[a-z0-9-]+?)-(?<chap>\\d{1,5}))/?$`, // some chapters drop "chapter-" (integer only: "-8-12" is ambiguous)
     ],
     seriesUrl: '/comics/{slug}/',
     chapterUrl: ['/{cslug}/', '/{slugBase}-chapter-{chap}/'],
     chapSep: '-',
     slugKey: stripThemesiaId, slugBase: stripThemesiaId,
+    chapterForSlug: themesiaChapterForSlug,
     linkSlug: 'base', // /comics/<title>/ 301-redirects to the current prefixed URL; a stale prefix 404s
     list: { requests: (e, a) => [{ url: `https://${a.host}/comics/${encodeURIComponent(stripThemesiaId(e.slug))}/` }], complete: true },
   },
@@ -106,6 +112,7 @@ export const SITES = {
     chapterUrl: ['/{cslug}/', '/{slug}-chapter-{chap}/'],
     chapSep: '-',
     slugKey: stripThemesiaId,
+    chapterForSlug: themesiaChapterForSlug,
     list: { complete: true },
   },
   kingofshojo: {
@@ -116,6 +123,7 @@ export const SITES = {
     chapterUrl: ['/{cslug}/', '/{slug}-chapter-{chap}/'],
     chapSep: '-',
     slugKey: stripThemesiaId,
+    chapterForSlug: themesiaChapterForSlug,
     list: { complete: true },
   },
   rolia: {

@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { exportFixtures, davEnv, loadPlaywright } from './helpers.mjs';
@@ -76,12 +77,10 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.ok(text === fixture.text, 'exported file differs from the import');
   });
 
-  await t.test('pin from the popup, then reading a chapter advances progress', async () => {
+  await t.test('pin from the popup, then reading a chapter advances progress', async (t) => {
     // serve a real (saved) Arena Scans series page + a chapter page without touching the network
-    // the saved page plus an og:image on a host that does not resolve: the background fetch
-    // fails, so the in-page fallback fetches it (served below) -> exercises the whole cover path
-    const seriesHtml = readFileSync(join(SITE_FIXTURES, 'arena-series.html'), 'utf8')
-      .replace('<head>', '<head><meta property="og:image" content="https://cover.shiori.test/cover.png">');
+    // the saved page plus an og:image served by a local HTTP server: the background worker
+    // fetches it itself (all network I/O happens there) -> exercises the whole cover path
     const png = Buffer.from(await app.evaluate(async () => {
       const c = new OffscreenCanvas(600, 850);
       const g = c.getContext('2d');
@@ -91,7 +90,11 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
       let str = ''; for (const x of b) str += String.fromCharCode(x);
       return btoa(str);
     }), 'base64');
-    await ctx.route('https://cover.shiori.test/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: png }));
+    const img = createServer((req, res) => { res.writeHead(200, { 'Content-Type': 'image/png' }); res.end(png); });
+    await new Promise((r) => img.listen(0, '127.0.0.1', r));
+    t.after(() => img.close());
+    const seriesHtml = readFileSync(join(SITE_FIXTURES, 'arena-series.html'), 'utf8')
+      .replace('<head>', `<head><meta property="og:image" content="http://127.0.0.1:${img.address().port}/cover.png">`);
     await ctx.route('https://arenascan.com/**', (route) => {
       const u = new URL(route.request().url());
       if (u.pathname === '/manga/e2e-pin-test/') return route.fulfill({ status: 200, contentType: 'text/html', body: seriesHtml });

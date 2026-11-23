@@ -9,7 +9,7 @@ export const CHECK_INTERVAL_MS = 6 * 3600 * 1000;
 export function isBlockedPage(text) {
   const head = String(text).slice(0, 8000);
   return /<title>\s*(Just a moment\.\.\.|Attention Required!|Access denied)/i.test(head)
-    || /cf-chl-|challenge-platform|cf_chl_opt|cf-error-details/i.test(head);
+    || /cf_chl_opt|cf-chl-widget|cf-error-details/i.test(head); // not "challenge-platform": normal pages load that script too
 }
 
 /**
