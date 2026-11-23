@@ -56,7 +56,7 @@ function renderFilters() {
   fillSelect($('fSite'), 'All sites', distinct(state.lib.entries.map((e) => e.siteId)).map((s) => [s, s]));
 }
 
-const unreadBy = (e) => (typeof e.latest?.chap === 'number' ? e.latest.chap - (e.progress?.chap ?? 0) : 0);
+const unreadBy = (e) => (typeof e.latest?.chap === 'number' && typeof e.progress?.chap === 'number' ? Math.max(0, e.latest.chap - e.progress.chap) : 0);
 
 function renderGrid() {
   const q = $('q').value.trim().toLowerCase();
@@ -90,7 +90,7 @@ function renderGrid() {
       h('div', { class: 'meta' },
         h('span', { class: 'name', text: e.name }),
         h('span', { class: 'muted small', text: `${e.siteId} · ${labelFor('folder', e.folder)}` }),
-        h('span', { class: 'small', text: `Read ${fmtChap(e.progress?.chap)} / ${fmtChap(e.latest?.chap)}` }),
+        h('span', { class: 'small', text: typeof e.progress?.chap === 'number' ? `Read ${fmtChap(e.progress.chap)} / ${fmtChap(e.latest?.chap)}` : `Not started${typeof e.latest?.chap === 'number' ? ` · ${fmtChap(e.latest.chap)} ch` : ''}` }),
         n > 0 ? h('span', { class: 'badge', text: `+${fmtChap(n)}` }) : null,
         err ? h('span', { class: 'small err-text', text: 'check failed', attrs: { title: err.error } }) : null,
       )));

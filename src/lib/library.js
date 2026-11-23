@@ -217,9 +217,9 @@ export function findBySeries(lib, siteId, slug) {
   return null;
 }
 
+/** New chapters past your progress. Series you have not started are not "unread". */
 export function isUnread(e) {
   const l = e.latest && typeof e.latest.chap === 'number' ? e.latest.chap : null;
-  if (l === null) return false;
-  const p = e.progress && typeof e.progress.chap === 'number' ? e.progress.chap : -Infinity;
-  return l > p;
+  const p = e.progress && typeof e.progress.chap === 'number' ? e.progress.chap : null;
+  return l !== null && p !== null && l > p;
 }

@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { exportFixtures, davEnv, loadPlaywright } from './helpers.mjs';
@@ -77,7 +78,20 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
 
   await t.test('pin from the popup, then reading a chapter advances progress', async () => {
     // serve a real (saved) Arena Scans series page + a chapter page without touching the network
-    const seriesHtml = readFileSync(join(SITE_FIXTURES, 'arena-series.html'), 'utf8');
+    // the saved page plus an og:image on a host that does not resolve: the background fetch
+    // fails, so the in-page fallback fetches it (served below) -> exercises the whole cover path
+    const seriesHtml = readFileSync(join(SITE_FIXTURES, 'arena-series.html'), 'utf8')
+      .replace('<head>', '<head><meta property="og:image" content="https://cover.shiori.test/cover.png">');
+    const png = Buffer.from(await app.evaluate(async () => {
+      const c = new OffscreenCanvas(600, 850);
+      const g = c.getContext('2d');
+      g.fillStyle = '#336699'; g.fillRect(0, 0, 600, 850);
+      g.fillStyle = '#ffcc00'; g.fillRect(50, 50, 500, 300);
+      const b = new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
+      let str = ''; for (const x of b) str += String.fromCharCode(x);
+      return btoa(str);
+    }), 'base64');
+    await ctx.route('https://cover.shiori.test/**', (route) => route.fulfill({ status: 200, contentType: 'image/png', headers: { 'Access-Control-Allow-Origin': '*' }, body: png }));
     await ctx.route('https://arenascan.com/**', (route) => {
       const u = new URL(route.request().url());
       if (u.pathname === '/manga/e2e-pin-test/') return route.fulfill({ status: 200, contentType: 'text/html', body: seriesHtml });
@@ -102,6 +116,20 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
       return [...lib.entries.values()].find((e) => e.siteId === 'arena' && e.slug === 'e2e-pin-test');
     });
     assert.ok(entry, 'pinned entry exists');
+    // cover: ~240px wide WebP, keyed local:<bytes>:<md5>.webp exactly like MangaPin
+    assert.match(entry.img || '', /^local:\d+:[0-9a-f]{32}\.webp$/);
+    const cover = await sw.evaluate(async (key) => {
+      const b64 = await self.shiori.store.getCover(key);
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const bmp = await createImageBitmap(new Blob([bytes], { type: 'image/webp' }));
+      return { len: bytes.length, magic: String.fromCharCode(...bytes.slice(8, 12)), w: bmp.width, h: bmp.height, b64 };
+    }, entry.img);
+    assert.equal(cover.magic, 'WEBP');
+    assert.equal(cover.w, 240);
+    assert.equal(cover.h, 340);
+    const [, bytes, md5hex] = /^local:(\d+):([0-9a-f]{32})\.webp$/.exec(entry.img);
+    assert.equal(Number(bytes), cover.len);
+    assert.equal(createHash('md5').update(Buffer.from(cover.b64, 'base64')).digest('hex'), md5hex);
     assert.equal(entry.name, 'A Portrait of Pride'); // scraped from the page's h1
     assert.match(entry.id, /^[A-Za-z0-9]{10}$/);
 
