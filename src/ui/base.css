@@ -1,0 +1,32 @@
+:root {
+  --bg: #f7f5f2; --panel: #ffffff; --ink: #1f1d1a; --muted: #6b665e; --line: #e3ded6;
+  --accent: #c2410c; --accent-ink: #ffffff; --ok: #15803d; --err: #b91c1c; --warn: #a16207;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #171614; --panel: #22201d; --ink: #ece8e1; --muted: #a39d93; --line: #37332e; --accent: #f97316; --accent-ink: #1b1209; --ok: #4ade80; --err: #f87171; --warn: #facc15; }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+button.danger { background: var(--err); color: #fff; }
+button:disabled { opacity: .55; cursor: default; }
+input, select, textarea { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; min-width: 0; }
+input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+a { color: inherit; }
+.muted { color: var(--muted); }
+.small { font-size: 12px; }
+.block { display: block; }
+.row { display: flex; gap: 10px; align-items: center; }
+.row.tight { gap: 6px; flex-wrap: wrap; }
+.stack { display: flex; flex-direction: column; gap: 6px; }
+.grow { flex: 1; min-width: 0; }
+.title { font-weight: 600; overflow-wrap: anywhere; }
+.pill { font-size: 12px; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+.pill.ok { color: var(--ok); } .pill.err { color: var(--err); } .pill.pending, .pill.busy { color: var(--warn); } .pill.off { color: var(--muted); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; }
+.cover { width: 72px; height: 102px; object-fit: cover; border-radius: 6px; background: var(--line); flex: none; }
+.thumb { width: 34px; height: 48px; object-fit: cover; border-radius: 4px; background: var(--line); flex: none; }
+.none { display: block; }

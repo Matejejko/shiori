@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shiori</title>
+  <link rel="stylesheet" href="../ui/base.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header class="bar">
+    <strong class="brand">Shiori</strong>
+    <span id="sync" class="pill off" title="">…</span>
+    <button id="syncNow" class="ghost" type="button" title="Sync now">Sync</button>
+    <button id="openApp" class="ghost" type="button" title="Open library">Library</button>
+  </header>
+  <section id="current" class="card" aria-live="polite"></section>
+  <section>
+    <h2 class="sub">Unread <span id="unreadCount" class="muted"></span></h2>
+    <ul id="unread" class="list"></ul>
+  </section>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shiori Library</title>
+  <link rel="stylesheet" href="../ui/base.css">
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <header class="top">
+    <strong class="brand">Shiori</strong>
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="library" class="tab on">Library</button>
+      <button type="button" role="tab" data-tab="io" class="tab">Import / Export</button>
+      <button type="button" role="tab" data-tab="settings" class="tab">Settings</button>
+      <button type="button" role="tab" data-tab="labels" class="tab">Labels</button>
+    </nav>
+    <span id="sync" class="pill off">…</span>
+    <button id="syncNow" type="button" class="ghost">Sync now</button>
+  </header>
+
+  <main>
+    <section id="tab-library" class="pane">
+      <div class="toolbar">
+        <input id="q" type="search" placeholder="Search name or site…" aria-label="Search">
+        <select id="fFolder" aria-label="Folder filter"></select>
+        <select id="fType" aria-label="Type filter"></select>
+        <select id="fTag" aria-label="Tag filter"></select>
+        <select id="fSite" aria-label="Site filter"></select>
+        <label class="check"><input id="fUnread" type="checkbox"> unread</label>
+        <select id="sort" aria-label="Sort">
+          <option value="updated">Recently updated</option>
+          <option value="name">Name</option>
+          <option value="unread">Most unread</option>
+          <option value="created">Recently added</option>
+          <option value="release">Latest release</option>
+        </select>
+        <span id="count" class="muted small"></span>
+        <button id="checkAll" type="button" class="ghost" title="Check releases for the release folder now">Check releases</button>
+      </div>
+      <div id="grid" class="grid"></div>
+    </section>
+
+    <section id="tab-io" class="pane" hidden>
+      <div class="card stack">
+        <h2>Import a MangaPin export</h2>
+        <p class="muted small">Pick a <code>MangaPin*.json</code>. You get a dry-run summary first; nothing changes until you confirm.</p>
+        <input id="file" type="file" accept=".json,application/json">
+        <div class="row tight">
+          <label class="check"><input type="radio" name="mode" value="merge" checked> Merge into my library</label>
+          <label class="check"><input type="radio" name="mode" value="replace"> Replace my library with the file</label>
+        </div>
+        <div id="summary"></div>
+      </div>
+      <div class="card stack">
+        <h2>Export</h2>
+        <p class="muted small">Writes a MangaPin-compatible <code>MangaPinYYYYMMDDHHmm.json</code> (entries + covers).</p>
+        <div><button id="export" type="button">Export MangaPin JSON</button> <span id="exportMsg" class="muted small"></span></div>
+      </div>
+    </section>
+
+    <section id="tab-settings" class="pane" hidden>
+      <form id="settings" class="card stack" autocomplete="off">
+        <h2>OpenCloud / WebDAV</h2>
+        <label>WebDAV URL of your personal space
+          <input name="davUrl" type="url" placeholder="https://oc.192.168.0.101.sslip.io/remote.php/webdav/" required>
+        </label>
+        <label>Username <input name="user" type="text" required autocomplete="username"></label>
+        <label>App token <input name="token" type="password" autocomplete="new-password" placeholder="(unchanged)"></label>
+        <p class="muted small">Create an app token in OpenCloud (Settings → App Tokens, or <code>opencloud auth-app create</code>). It is stored only in this browser, never synced. Library lives in <code>/Shiori/</code> on the server.</p>
+        <label class="check"><input name="autoSync" type="checkbox"> Sync automatically (5 s after a change, every 15 min)</label>
+        <label class="check"><input name="releaseChecks" type="checkbox"> Check for new chapters every 6 h</label>
+        <label>Release-check folder <select name="releaseFolder"></select></label>
+        <div class="row tight">
+          <button type="submit">Save</button>
+          <button id="test" type="button" class="ghost">Test connection</button>
+          <span id="settingsMsg" class="small"></span>
+        </div>
+      </form>
+      <div class="card stack">
+        <h2>Status</h2>
+        <div id="status" class="small"></div>
+      </div>
+    </section>
+
+    <section id="tab-labels" class="pane" hidden>
+      <p class="muted small">MangaPin stores folders, types and tags as bare numbers. Name them here (names sync between your devices; entries keep the numbers).</p>
+      <div class="labels">
+        <div class="card" data-kind="folder"><h2>Folders</h2><div class="rows"></div><button type="button" class="ghost add">Add</button></div>
+        <div class="card" data-kind="type"><h2>Types</h2><div class="rows"></div><button type="button" class="ghost add">Add</button></div>
+        <div class="card" data-kind="tag"><h2>Tags</h2><div class="rows"></div><button type="button" class="ghost add">Add</button></div>
+      </div>
+      <div class="row tight"><button id="saveLabels" type="button">Save labels</button><span id="labelsMsg" class="small"></span></div>
+    </section>
+  </main>
+
+  <dialog id="edit"></dialog>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
