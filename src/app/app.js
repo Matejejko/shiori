@@ -135,8 +135,19 @@ function numOrEmpty(v) { return v === undefined || v === null ? '' : String(v); 
 const toDateInput = (ts) => (ts ? new Date(ts - new Date(ts).getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '');
 const fromDateInput = (s) => (s ? new Date(s + 'T12:00:00').getTime() : undefined);
 
-// click on the backdrop (outside the window) closes the series dialog
-$('edit').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
+// click on the backdrop (outside the window) closes the series dialog and the confirmation
+for (const id of ['edit', 'confirm']) $(id).addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
+
+/** Styled confirmation in the middle of the screen; resolves true only on the confirm button. */
+function confirmBox(title, body, okText) {
+  const d = $('confirm');
+  d.querySelector('.c-title').textContent = title;
+  d.querySelector('.c-body').textContent = body;
+  d.querySelector('.c-ok').textContent = okText;
+  d.returnValue = '';
+  d.showModal();
+  return new Promise((resolve) => d.addEventListener('close', () => resolve(d.returnValue === 'ok'), { once: true }));
+}
 
 function openEditor(id) {
   const e = state.lib.entries.find((x) => x.id === id);
@@ -196,9 +207,13 @@ function openEditor(id) {
           h('span', { class: 'chip', text: labelFor('folder', e.folder) }),
           e.type !== undefined ? h('span', { class: 'chip', text: labelFor('type', e.type) }) : null),
         h('div', { class: 'ed-progress' },
-          h('span', { class: 'stat' }, h('span', { class: 'num big', text: fmtChap(e.progress?.chap) }), h('span', { class: 'of', text: `of ${fmtChap(e.latest?.chap)}` })),
+          typeof e.progress?.chap === 'number'
+            ? h('span', { class: 'stat' }, h('span', { class: 'num big', text: fmtChap(e.progress.chap) }), typeof e.latest?.chap === 'number' ? h('span', { class: 'of', text: `of ${fmtChap(e.latest.chap)}` }) : null)
+            : h('span', { class: 'stat' }, h('span', { class: 'num big quiet', text: 'Not started' })),
           typeof e.progress?.chap === 'number' && typeof e.latest?.chap === 'number' ? h('progress', { attrs: { max: e.latest.chap, value: Math.min(e.progress.chap, e.latest.chap), 'aria-hidden': 'true' } }) : null,
-          h('span', { class: 'muted small', text: `Read ${fmtChap(e.progress?.chap)} · latest ${fmtChap(e.latest?.chap)}${e.latest?.ts ? ` (${ago(e.latest.ts)})` : ''}` })),
+          h('span', { class: 'muted small', text: typeof e.latest?.chap === 'number'
+            ? `Latest chapter ${fmtChap(e.latest.chap)}${e.latest.ts ? `, found ${ago(e.latest.ts)}` : ''}`
+            : 'No chapters found yet. Check releases looks them up.' })),
         h('div', { class: 'row tight ed-links' },
           nextLink ? h('a', { class: 'btn', href: nextLink, text: `Continue: ch ${fmtChap(e.next?.chap)}`, target: '_blank', rel: 'noopener noreferrer' }) : null,
           seriesLink ? h('a', { class: nextLink ? 'btn ghost' : 'btn', href: seriesLink, text: 'Open series', target: '_blank', rel: 'noopener noreferrer' }) : null),
@@ -227,7 +242,7 @@ function openEditor(id) {
     h('div', { class: 'ed-foot' },
       h('div', { class: 'row tight' },
         h('button', { type: 'button', class: 'danger quiet edit-only', text: 'Delete', on: { click: async () => {
-        if (!confirm(`Delete “${e.name}” from the library? This syncs to your other devices.`)) return;
+        if (!(await confirmBox(`Delete “${e.name}”?`, 'It is removed from this library and from your other synced devices.', 'Delete'))) return;
         await send('remove', { id });
         dlg.close();
         await load();
@@ -291,7 +306,7 @@ async function dryRun() {
     s.problems.length ? h('details', {}, h('summary', { text: 'Warnings' }), h('ul', {}, s.problems.map((p) => h('li', { text: p })))) : null,
     h('div', { class: 'row tight' },
       h('button', { type: 'button', text: mode === 'replace' ? `Replace library (${s.fileEntries} entries)` : `Merge ${s.added.length + s.updated.length} changes`, on: { click: async (ev) => {
-        if (mode === 'replace' && s.removed.length && !confirm(`This deletes ${s.removed.length} entries that are not in the file (on all synced devices). Continue?`)) return;
+        if (mode === 'replace' && s.removed.length && !(await confirmBox('Replace your library?', `${s.removed.length} series that are not in the file will be deleted on all synced devices.`, 'Replace library'))) return;
         ev.target.disabled = true;
         try {
           await send('importFile', { text: fileText, mode, apply: true, planId: s.planId });

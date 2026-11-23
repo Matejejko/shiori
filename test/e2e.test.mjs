@@ -78,6 +78,17 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.waitForSelector('dialog#edit[open]');
     await app.mouse.click(5, 5);
     await app.waitForFunction(() => !document.querySelector('dialog#edit').open);
+    // delete asks in a styled confirmation; Cancel keeps the series
+    const countBefore = await app.textContent('#count');
+    await app.click('#grid .tile >> nth=0');
+    await app.click('#edit .edit-toggle');
+    await app.click('#edit button.danger');
+    await app.waitForSelector('dialog#confirm[open]');
+    assert.match(await app.textContent('#confirm .c-title'), /^Delete “/);
+    await app.click('#confirm button[value=cancel]');
+    await app.waitForFunction(() => !document.querySelector('dialog#confirm').open);
+    await app.keyboard.press('Escape');
+    assert.equal(await app.textContent('#count'), countBefore);
     await app.uncheck('#fTag input[value="60"]');
     await app.uncheck('#fTag input[value="81"]');
     await app.click('#fTag summary');

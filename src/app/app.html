@@ -107,6 +107,16 @@
   </main>
 
   <dialog id="edit"></dialog>
+  <dialog id="confirm" aria-labelledby="confirmTitle">
+    <form method="dialog" class="confirm-box">
+      <h2 id="confirmTitle" class="c-title"></h2>
+      <p class="c-body"></p>
+      <div class="c-actions">
+        <button value="cancel" class="ghost" autofocus>Cancel</button>
+        <button value="ok" class="danger c-ok">Delete</button>
+      </div>
+    </form>
+  </dialog>
   <script type="module" src="app.js"></script>
 </body>
 </html>

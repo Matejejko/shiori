@@ -287,6 +287,8 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
     if (cover) await store.putCovers([[cover.key, cover.b64]]);
     addEntry(lib, e, now);
     await store.saveLibrary(lib);
+    // look up its chapters right away instead of waiting for the 6-hourly check
+    if (getAdapter(siteId)?.list) setTimeout(() => runReleaseChecks({ ids: [e.id], force: true }).catch(() => {}), 0);
     return { pinned: true, id: e.id, cover: !!cover };
   });
 }
