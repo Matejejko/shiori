@@ -56,7 +56,7 @@ async function renderCurrent(lib, covers) {
 
   if (cur.match || cur.url) {
     const supported = !!(cur.match && cur.match.siteId);
-    const name = h('input', { type: 'text', value: (cur.title || '').slice(0, 200), attrs: { 'aria-label': 'Name' }, class: 'grow' });
+    const name = h('input', { type: 'text', placeholder: 'Name (leave empty: taken from the page)', attrs: { 'aria-label': 'Name' }, class: 'grow' });
     const folder = h('select', { attrs: { 'aria-label': 'Folder' } },
       [1, 2, 4].map((f) => h('option', { value: f, text: folderName(lib.labels, f) })));
     const status = h('span', { class: 'muted small' });

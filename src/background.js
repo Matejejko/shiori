@@ -8,7 +8,7 @@ import { planImport, exportString, editEntry, setProgress, deleteEntry, addEntry
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
 import { locate, trackVisit } from './lib/tracker.js';
-import { applyChapters, fetchChapters, dueEntries } from './lib/releases.js';
+import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName } from './lib/adapters.js';
 import { mergeLabels } from './lib/merge.js';
 
@@ -140,20 +140,21 @@ async function fetchText(req) {
   const t = setTimeout(() => ctrl.abort(), 25000);
   try {
     const res = await fetch(req.url, { method: req.method || 'GET', headers: req.headers, body: req.body, credentials: 'omit', signal: ctrl.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status} from ${host}`);
     const text = await res.text();
-    if (/<title>\s*Just a moment\.\.\.\s*<\/title>|cf-chl-/i.test(text.slice(0, 5000))) throw new Error(`${host} answered with a Cloudflare challenge`);
+    if (isBlockedPage(text)) throw new Error(`${host} answered with a bot challenge (Cloudflare) — open the site once in a tab, or check manually`);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${host}`);
     return text;
   } finally { clearTimeout(t); }
 }
 
 async function checkOne(entry) {
-  const chapters = await fetchChapters(entry, fetchText);
+  const { chapters, complete } = await fetchChapters(entry, fetchText);
+  if (!chapters.length) throw new Error('no chapters found (site layout changed or page blocked?)');
   return store.withLock(async () => {
     const lib = await store.loadLibrary();
     const cur = lib.entries.get(entry.id);
     if (!cur) return { id: entry.id, changed: false };
-    const next = applyChapters(cur, chapters);
+    const next = applyChapters(cur, chapters, Date.now(), { complete });
     if (next) { lib.entries.set(entry.id, next); await store.saveLibrary(lib); }
     return { id: entry.id, changed: !!next, chapters: chapters.length };
   });
@@ -167,7 +168,7 @@ function runReleaseChecks({ ids = null, force = false }) {
     const { relchk = {} } = await api.storage.local.get('relchk');
     const lib = await store.loadLibrary();
     const due = ids
-      ? ids.map((id) => lib.entries.get(id)).filter((e) => e && getAdapter(e.siteId))
+      ? ids.map((id) => lib.entries.get(id)).filter((e) => e && getAdapter(e.siteId)?.list)
       : dueEntries(lib, { folder: cfg.releaseFolder, checked: relchk, interval: force ? 0 : undefined });
     const results = [];
     for (const e of due) {
@@ -211,8 +212,18 @@ async function fetchInPage(url) {
   return await new Promise((resolve, reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = reject; r.readAsDataURL(blob); });
 }
 
-function cleanName(s) {
-  return String(s || '').replace(/\s+/g, ' ').replace(/\s*[|–—-]\s*(read|manga|manhwa|comic|scans?|online).*$/i, '').trim().slice(0, 300);
+/** Page title -> series name: drop "Read … Online", "- Arenascans"-style site suffixes. */
+export function cleanName(s, hostname = '') {
+  let n = String(s || '').replace(/\s+/g, ' ').trim();
+  n = n.replace(/^read\s+/i, '').replace(/\s*[|–—-]\s*(read|manga|manhwa|manhua|comic|webtoon|scans?)\b.*$/i, '');
+  n = n.replace(/\s+(manga|manhwa|manhua)\s*(\[latest chapters\]|online)?$/i, '').replace(/\s*\[latest chapters\]$/i, '');
+  const label = hostname.toLowerCase().replace(/^www\./, '').split('.')[0].replace(/[^a-z0-9]/g, '');
+  const m = /^(.*\S)\s+[|–—-]\s+([^|–—-]+)$/.exec(n);
+  if (m && label.length >= 4) {
+    const suffix = m[2].toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (suffix && (suffix.startsWith(label) || label.startsWith(suffix))) n = m[1];
+  }
+  return n.trim().slice(0, 300);
 }
 
 async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
@@ -223,9 +234,10 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
   let siteId, slug;
   if (match && match.siteId) { siteId = match.siteId; slug = match.slug; }
   else {
+    // generic site: like MangaPin's local sites, the slug is the series path on that host
     const u = new URL(tab.url);
     siteId = u.hostname;
-    slug = u.pathname.replace(/\/+$/, '').split('/').filter(Boolean).pop() || u.hostname;
+    slug = u.pathname.replace(/(?:\/|-)(?:chapter|chap|ch|episode|ep)[-_ .]?\d[^/]*\/?$/i, '').replace(/\/+$/, '') || '/';
   }
   let scraped = { h1: '', ogTitle: '', title: tab.title || '', imgs: [] };
   try {
@@ -249,8 +261,8 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
     const e = {};
     const fields = {
       siteId, slug,
-      url: match && match.kind === 'series' ? tab.url.split('#')[0] : seriesUrl({ siteId, slug }) || tab.url.split('#')[0],
-      name: cleanName(nameOverride || scraped.h1 || scraped.ogTitle || scraped.title) || slug,
+      url: match && match.kind === 'series' ? tab.url.split('#')[0] : seriesUrl({ siteId, slug }) || undefined,
+      name: cleanName(nameOverride || scraped.h1 || scraped.ogTitle || scraped.title, new URL(tab.url).hostname) || slug,
       img: cover ? cover.key : undefined,
       progress: match && match.kind === 'chapter' && typeof match.chap === 'number'
         ? (match.chapSlug ? { chap: match.chap, slug: match.chapSlug, ts: now } : { chap: match.chap, ts: now }) : undefined,
@@ -328,7 +340,7 @@ const handlers = {
       urls: Object.fromEntries(lib.order.map((id) => {
         const e = lib.entries.get(id);
         const next = e.next && (!e.progress || e.next.chap > e.progress.chap) ? e.next : null;
-        return [id, { series: e.url || seriesUrl(e), next: next ? chapterUrl(e, next) : null }];
+        return [id, { series: e.url || seriesUrl(e, { link: true }), next: next ? chapterUrl(e, next) : null }];
       })),
     };
   },

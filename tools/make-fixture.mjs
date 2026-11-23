@@ -59,10 +59,10 @@ for (let i = 0; i < series.length; i++) {
   const e = { siteId: s.siteId, slug: s.slug };
   if (s.url) e.url = s.url;
   e.name = s.name;
-  const hasImg = i % 26 !== 25; // 4 entries without a cover
+  const hasImg = ![25, 51, 77, 101].includes(i); // 4 entries without a cover -> 99 with img (91 stored + 8 dangling)
   if (hasImg) e.img = 'PENDING';
   const latestChap = Math.floor(5 + rnd() * 180) + (rnd() < 0.08 ? 0.5 : 0);
-  const readChap = Math.max(0, latestChap - Math.floor(rnd() * 6)) - (rnd() < 0.05 ? 0.5 : 0);
+  const readChap = Math.max(0, Math.max(0, latestChap - Math.floor(rnd() * 6)) - (rnd() < 0.05 ? 0.5 : 0));
   const pTs = createTs + Math.floor(rnd() * 90) * 86400000;
   const lTs = pTs + Math.floor(rnd() * 5) * 86400000;
   if (readChap < latestChap && rnd() < 0.7) {

@@ -80,13 +80,13 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const seriesHtml = readFileSync(join(SITE_FIXTURES, 'arena-series.html'), 'utf8');
     await ctx.route('https://arenascan.com/**', (route) => {
       const u = new URL(route.request().url());
-      if (u.pathname === '/manga/a-portrait-of-pride/') return route.fulfill({ status: 200, contentType: 'text/html', body: seriesHtml });
+      if (u.pathname === '/manga/e2e-pin-test/') return route.fulfill({ status: 200, contentType: 'text/html', body: seriesHtml });
       if (/chapter-\d+\/$/.test(u.pathname)) return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>chapter</title><h1>Chapter</h1>' });
       return route.fulfill({ status: 404, body: '' });
     });
     const site = await ctx.newPage();
     watch(site, 'site');
-    await site.goto('https://arenascan.com/manga/a-portrait-of-pride/');
+    await site.goto('https://arenascan.com/manga/e2e-pin-test/');
     const tabId = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://arenascan.com/*' }))[0].id);
 
     const popup = await ctx.newPage();
@@ -99,19 +99,19 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
 
     const entry = await sw.evaluate(async () => {
       const lib = await self.shiori.store.loadLibrary();
-      return [...lib.entries.values()].find((e) => e.siteId === 'arena');
+      return [...lib.entries.values()].find((e) => e.siteId === 'arena' && e.slug === 'e2e-pin-test');
     });
     assert.ok(entry, 'pinned entry exists');
-    assert.equal(entry.slug, 'a-portrait-of-pride');
+    assert.equal(entry.name, 'A Portrait of Pride'); // scraped from the page's h1
     assert.match(entry.id, /^[A-Za-z0-9]{10}$/);
 
-    await site.goto('https://arenascan.com/a-portrait-of-pride-chapter-7/');
+    await site.goto('https://arenascan.com/e2e-pin-test-chapter-7/');
     await sw.evaluate(async () => { await self.shiori.store.withLock(async () => {}); });
     const after = await sw.evaluate(async (id) => (await self.shiori.store.getEntry(id)), entry.id);
     assert.equal(after.progress.chap, 7);
 
     // forward only: going back to chapter 3 does not regress
-    await site.goto('https://arenascan.com/a-portrait-of-pride-chapter-3/');
+    await site.goto('https://arenascan.com/e2e-pin-test-chapter-3/');
     await site.waitForTimeout(300);
     await sw.evaluate(async () => { await self.shiori.store.withLock(async () => {}); });
     assert.equal((await sw.evaluate(async (id) => (await self.shiori.store.getEntry(id)), entry.id)).progress.chap, 7);

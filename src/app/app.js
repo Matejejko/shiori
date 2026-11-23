@@ -288,6 +288,10 @@ async function renderSettings() {
   if (state.lib) {
     clear(form.releaseFolder).append(...knownKeys('folder').map((v) => h('option', { value: v, text: labelFor('folder', v), selected: v === st.cfg.releaseFolder })));
   }
+  try {
+    const all = await api.permissions.contains({ origins: ['<all_urls>'] });
+    $('hostAccess').hidden = all;
+  } catch { $('hostAccess').hidden = true; }
   const s = st.sync;
   clear($('status')).append(h('dl', { class: 'summary' },
     h('dt', { text: 'Library' }), h('dd', { text: `${st.count} entries, ${st.covers} covers stored locally` }),
@@ -331,6 +335,11 @@ $('test').addEventListener('click', async () => {
   const r = await send('testConnection', { cfg, token: token || undefined });
   msg.textContent = r.ok ? r.message : r.error;
   msg.className = 'small ' + (r.ok ? 'ok-text' : 'err-text');
+});
+
+$('grantHosts').addEventListener('click', async () => {
+  try { await api.permissions.request({ origins: ['<all_urls>'] }); } catch { /* user said no */ }
+  renderSettings();
 });
 
 // ---------------------------------------------------------------------------------------
