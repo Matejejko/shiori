@@ -3,6 +3,7 @@
 
 import { Store } from './lib/store.js';
 import { WebDav } from './lib/webdav.js';
+import { tagIdsFromNames } from './lib/labels.js';
 import { syncOnce } from './lib/sync.js';
 import { planImport, exportString, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
@@ -206,7 +207,12 @@ function scrapePage() {
     const src = el && (el.getAttribute('data-src') || el.getAttribute('src'));
     if (src && !src.startsWith('data:')) imgs.push(abs(src));
   }
-  return { h1, ogTitle: meta('meta[property="og:title"]'), title: document.title, imgs: [...new Set(imgs)].slice(0, 6) };
+  // genre links, with MangaPin's per-site selectors; menus/headers excluded (site-wide genre lists)
+  const genreSel = '.mgen a, .genres-content a, .genre-tag, a[href*="?genres_in="], a[href*="/browse?genres="], a[href*="?tag="], a[href*="/tag/"], a[href*="search?genres="], a[href*="/genres/"]';
+  const genres = [...document.querySelectorAll(genreSel)]
+    .filter((el) => !el.closest('nav, header, footer, [role="navigation"], .menu'))
+    .map((el) => el.textContent.trim()).filter((t) => t && t.length < 40);
+  return { h1, ogTitle: meta('meta[property="og:title"]'), title: document.title, imgs: [...new Set(imgs)].slice(0, 6), genres: genres.length > 30 ? [] : genres };
 }
 
 /** Page title -> series name: drop "Read … Online", "- Arenascans"-style site suffixes. */
@@ -261,7 +267,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
       img: cover ? cover.key : undefined,
       progress: match && match.kind === 'chapter' && typeof match.chap === 'number'
         ? (match.chapSlug ? { chap: match.chap, slug: match.chapSlug, ts: now } : { chap: match.chap, ts: now }) : undefined,
-      cLang: 'en', folder: Number(folder) || 1, tags: [], ts: now, createTs: now, id: newId(new Set(lib.entries.keys())),
+      cLang: 'en', folder: Number(folder) || 1, tags: tagIdsFromNames(scraped.genres || []), ts: now, createTs: now, id: newId(new Set(lib.entries.keys())),
     };
     for (const k of ENTRY_FIELD_ORDER) if (fields[k] !== undefined) e[k] = fields[k];
     if (cover) await store.putCovers([[cover.key, cover.b64]]);

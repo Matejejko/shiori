@@ -165,3 +165,8 @@ test('built-in names for folders and MangaPin tags; your own labels win', async 
   assert.equal(labelName({ tag: { 81: { name: '', ts: 1 } } }, 'tag', 81), 'Fantasy'); // removed label -> default again
   assert.equal(labelName(null, 'tag', 99999), null);
 });
+
+test('genre names scraped on pin map to MangaPin tag ids (case/punctuation/alt names)', async () => {
+  const { tagIdsFromNames } = await import('../src/lib/labels.js');
+  assert.deepEqual(tagIdsFromNames(['Action', ' fantasy ', 'Slice of Life', 'shônen', 'Not A Genre', 'ACTION']), [60, 81, 126, 11]);
+});

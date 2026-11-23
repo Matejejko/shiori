@@ -66,6 +66,16 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.click('button[data-tab=library]');
     await app.waitForFunction((n) => document.querySelectorAll('#grid .tile').length === n, expected);
     assert.equal(await app.textContent('#count'), `${expected} / ${expected}`);
+    // tag filter: tick two tags -> only series that have both
+    const want = parseExport(fixture.text).entries.filter((x) => [60, 81].every((t) => (x.obj.tags || []).includes(t))).length;
+    await app.click('#fTag summary');
+    await app.check('#fTag input[value="60"]');
+    await app.check('#fTag input[value="81"]');
+    await app.waitForFunction((n) => document.querySelectorAll('#grid .tile').length === n, want);
+    assert.match(await app.textContent('#fTag summary'), /Action, Fantasy|Fantasy, Action/);
+    await app.uncheck('#fTag input[value="60"]');
+    await app.uncheck('#fTag input[value="81"]');
+    await app.click('#fTag summary');
   });
 
   await t.test('export through the UI is byte-identical to the imported file', async () => {
@@ -94,7 +104,9 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await new Promise((r) => img.listen(0, '127.0.0.1', r));
     t.after(() => img.close());
     const seriesHtml = readFileSync(join(SITE_FIXTURES, 'arena-series.html'), 'utf8')
-      .replace('<head>', `<head><meta property="og:image" content="http://127.0.0.1:${img.address().port}/cover.png">`);
+      .replace('<head>', `<head><meta property="og:image" content="http://127.0.0.1:${img.address().port}/cover.png">`)
+      // genre links on the page, plus a site menu full of genres that must be ignored
+      .replace('<body>', '<body><nav><a href="/genres/romance/">Romance</a><a href="/genres/horror/">Horror</a></nav><div class="mgen"><a href="/genres/action/">Action</a><a href="/genres/fantasy/">Fantasy</a><a href="/genres/xyz/">Not a genre</a></div>');
     await ctx.route('https://arenascan.com/**', (route) => {
       const u = new URL(route.request().url());
       if (u.pathname === '/manga/e2e-pin-test/') return route.fulfill({ status: 200, contentType: 'text/html', body: seriesHtml });
@@ -135,6 +147,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.equal(createHash('md5').update(Buffer.from(cover.b64, 'base64')).digest('hex'), md5hex);
     assert.equal(entry.name, 'A Portrait of Pride'); // scraped from the page's h1
     assert.match(entry.id, /^[A-Za-z0-9]{10}$/);
+    assert.deepEqual(entry.tags, [60, 81]); // Action, Fantasy — menu genres ignored
 
     await site.goto('https://arenascan.com/e2e-pin-test-chapter-7/');
     await sw.evaluate(async () => { await self.shiori.store.withLock(async () => {}); });

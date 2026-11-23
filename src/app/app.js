@@ -46,6 +46,21 @@ function knownKeys(kind, withDefaults = false) {
 }
 const labelFor = (kind, v) => labelName(state.lib.labels, kind, v) || (kind === 'folder' ? `Folder ${v}` : kind === 'type' ? `Type ${v}` : `Tag ${v}`);
 
+const pickedTags = (el) => [...el.querySelectorAll('input:checked')].map((i) => Number(i.value));
+/** Checkbox list of tags inside a <details> (sorted by name); fires 'input' on change. */
+function fillTagPicker(el, keys, selected, empty) {
+  const opts = el.querySelector('.opts');
+  const byName = [...keys].sort((a, b) => labelFor('tag', a).localeCompare(labelFor('tag', b)));
+  clear(opts).append(...byName.map((v) => h('label', { class: 'check' },
+    h('input', { type: 'checkbox', value: v, checked: selected.has(v) }), labelFor('tag', v))));
+  const summary = () => {
+    const p = pickedTags(el);
+    el.querySelector('summary').textContent = p.length ? p.map((v) => labelFor('tag', v)).join(', ') : empty;
+  };
+  opts.onchange = () => { summary(); el.dispatchEvent(new Event('input')); };
+  summary();
+}
+
 function fillSelect(sel, all, items) {
   const cur = sel.value;
   clear(sel).append(h('option', { value: '', text: all }), ...items.map(([v, t]) => h('option', { value: v, text: t })));
@@ -54,7 +69,7 @@ function fillSelect(sel, all, items) {
 function renderFilters() {
   fillSelect($('fFolder'), 'All folders', knownKeys('folder').map((f) => [f, labelFor('folder', f)]));
   fillSelect($('fType'), 'Any type', knownKeys('type').map((f) => [f, labelFor('type', f)]));
-  fillSelect($('fTag'), 'Any tag', knownKeys('tag').map((f) => [f, labelFor('tag', f)]));
+  fillTagPicker($('fTag'), knownKeys('tag'), new Set(pickedTags($('fTag'))), 'Any tag');
   fillSelect($('fSite'), 'All sites', distinct(state.lib.entries.map((e) => e.siteId)).map((s) => [s, s]));
 }
 
@@ -62,12 +77,12 @@ const unreadBy = (e) => (typeof e.latest?.chap === 'number' && typeof e.progress
 
 function renderGrid() {
   const q = $('q').value.trim().toLowerCase();
-  const f = { folder: $('fFolder').value, type: $('fType').value, tag: $('fTag').value, site: $('fSite').value, unread: $('fUnread').checked };
+  const f = { folder: $('fFolder').value, type: $('fType').value, tags: pickedTags($('fTag')), site: $('fSite').value, unread: $('fUnread').checked };
   let list = state.lib.entries.filter((e) => {
     if (q && !(`${e.name} ${e.siteId} ${e.slug}`.toLowerCase().includes(q))) return false;
     if (f.folder && String(e.folder) !== f.folder) return false;
     if (f.type && String(e.type) !== f.type) return false;
-    if (f.tag && !(Array.isArray(e.tags) && e.tags.map(String).includes(f.tag))) return false;
+    if (f.tags.length && !f.tags.every((t) => Array.isArray(e.tags) && e.tags.includes(t))) return false; // all ticked tags
     if (f.site && e.siteId !== f.site) return false;
     if (f.unread && !(unreadBy(e) > 0)) return false;
     return true;
@@ -128,18 +143,19 @@ function openEditor(id) {
     url: h('input', { type: 'url', value: e.url || '', placeholder: urls.series || 'https://…' }),
     folder: h('select', {}, knownKeys('folder').map((v) => h('option', { value: v, text: labelFor('folder', v), selected: v === e.folder }))),
     type: h('select', {}, h('option', { value: '', text: '(none)' }), knownKeys('type').map((v) => h('option', { value: v, text: labelFor('type', v), selected: v === e.type }))),
-    tags: h('select', { multiple: true, attrs: { size: 8 } }, knownKeys('tag', true).map((v) => h('option', { value: v, text: labelFor('tag', v), selected: Array.isArray(e.tags) && e.tags.includes(v) }))),
+    tags: h('details', { class: 'tagpick' }, h('summary'), h('div', { class: 'opts' })),
     newTag: h('input', { type: 'number', step: 1, placeholder: 'new tag #' }),
     score: h('input', { type: 'number', step: 'any', value: numOrEmpty(e.score) }),
     startTs: h('input', { type: 'date', value: toDateInput(e.startTs) }),
     endTs: h('input', { type: 'date', value: toDateInput(e.endTs) }),
     progress: h('input', { type: 'number', step: 'any', min: 0, value: numOrEmpty(e.progress?.chap) }),
   };
+  fillTagPicker(f.tags, knownKeys('tag', true), new Set(Array.isArray(e.tags) ? e.tags : []), '(no tags)');
   // values as shown; Save sends only what differs from this snapshot (see formPatch)
   const readForm = () => ({
     name: f.name.value.trim(), url: f.url.value.trim() || undefined, folder: Number(f.folder.value),
     type: f.type.value === '' ? undefined : Number(f.type.value),
-    tags: [...f.tags.selectedOptions].map((o) => Number(o.value)).concat(f.newTag.value !== '' ? [Number(f.newTag.value)] : []),
+    tags: pickedTags(f.tags).concat(f.newTag.value !== '' ? [Number(f.newTag.value)] : []),
     score: f.score.value === '' ? undefined : Number(f.score.value),
     startTs: f.startTs.value === toDateInput(e.startTs) ? e.startTs : fromDateInput(f.startTs.value),
     endTs: f.endTs.value === toDateInput(e.endTs) ? e.endTs : fromDateInput(f.endTs.value),
@@ -178,7 +194,7 @@ function openEditor(id) {
       h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url),
       h('label', {}, 'Folder', f.folder),
       h('label', {}, 'Type', f.type),
-      h('label', {}, 'Tags (ctrl/cmd-click)', f.tags),
+      h('div', { class: 'full' }, h('div', { text: 'Tags' }), f.tags),
       h('label', {}, 'Add tag number', f.newTag),
       h('label', {}, 'Score', f.score),
       h('label', {}, 'Progress (chapter)', f.progress),
