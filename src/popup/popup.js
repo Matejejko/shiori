@@ -81,14 +81,14 @@ async function renderCurrent(lib, covers) {
 
 async function renderUnread(lib, covers, cfg) {
   const ul = clear($('unread'));
-  const list = lib.entries.filter((e) => e.folder === cfg.releaseFolder && typeof e.latest?.chap === 'number' && e.latest.chap > (e.progress?.chap ?? -Infinity))
+  const list = lib.entries.filter((e) => e.folder === cfg.releaseFolder && typeof e.latest?.chap === 'number' && typeof e.progress?.chap === 'number' && e.latest.chap > e.progress.chap)
     .sort((a, b) => (b.latest.ts || 0) - (a.latest.ts || 0));
   $('unreadCount').textContent = list.length ? `(${list.length})` : '';
   if (!list.length) { ul.append(h('li', { class: 'muted small', text: 'Nothing new. Release checks run every 6 h.' })); return; }
   for (const e of list) {
     const u = lib.urls[e.id] || {};
     const target = u.next || u.series;
-    const behind = e.latest.chap - (e.progress?.chap ?? 0);
+    const behind = e.latest.chap - e.progress.chap;
     ul.append(h('li', {},
       h('a', { class: 'row item', href: target || undefined, on: { click: (ev) => { ev.preventDefault(); if (target) api.tabs.create({ url: target }); } } },
         cover(e, covers),
