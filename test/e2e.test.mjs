@@ -125,6 +125,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
       .replace('<body>', '<body><nav><a href="/genres/romance/">Romance</a><a href="/genres/horror/">Horror</a></nav><div class="mgen"><a href="/genres/action/">Action</a><a href="/genres/fantasy/">Fantasy</a><a href="/genres/xyz/">Not a genre</a></div>');
     await ctx.route('https://arenascan.com/**', (route) => {
       const u = new URL(route.request().url());
+      if (u.pathname === '/manga/e2e-seen/') return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Seen</title><h1>Seen Series</h1>' });
       if (u.pathname === '/manga/e2e-pin-test/') return route.fulfill({ status: 200, contentType: 'text/html', body: seriesHtml });
       if (/chapter-\d+\/$/.test(u.pathname)) return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>chapter</title><h1>Chapter</h1>' });
       return route.fulfill({ status: 404, body: '' });
@@ -198,6 +199,24 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.equal(pinned.siteId, 'comix');
     for (const t of [70, 119, 14, 27, 26]) assert.ok(pinned.tags.includes(t), `tag ${t} in ${pinned.tags}`); // Comedy Romance Josei Long Strip Full Color
     await cx.close();
+
+    // read chapter 23 of a series that is not pinned, then pin it from its series page: progress = 23
+    const rd = await ctx.newPage();
+    await rd.goto('https://arenascan.com/e2e-seen-chapter-23/');
+    for (let i = 0; i < 50; i++) {
+      const seen = await sw.evaluate(async () => (await chrome.storage.local.get('seen')).seen || {});
+      if (Object.values(seen).some((x) => x.chap === 23)) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    await rd.goto('https://arenascan.com/manga/e2e-seen/');
+    const rdTab = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://arenascan.com/manga/e2e-seen/' }))[0].id);
+    const cur = await sw.evaluate((id) => self.shiori.handlers.currentTab({ tabId: id }), rdTab);
+    assert.equal(cur.seen && cur.seen.chap, 23); // the popup can say "You've read up to chapter 23"
+    const pr = await sw.evaluate((id) => self.shiori.handlers.pin({ tabId: id }), rdTab);
+    const seenEntry = await sw.evaluate(async (id) => self.shiori.store.getEntry(id), pr.id);
+    assert.equal(seenEntry.progress.chap, 23);
+    assert.equal(seenEntry.progress.slug, 'e2e-seen-chapter-23');
+    await rd.close();
   });
 
   await t.test('settings + sync writes Shiori/library.json to OpenCloud', { skip: !env && 'no OpenCloud configured (test/opencloud/start.sh)' }, async () => {
@@ -218,7 +237,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const doc = await dav.getText('Shiori/library.json');
     assert.ok(doc, 'library.json exists');
     const lib = fromDoc(doc.text);
-    assert.equal(lib.entries.size, expected + 2); // + the two series pinned above (Arena, Comix)
+    assert.equal(lib.entries.size, expected + 3); // + the series pinned above (Arena, Comix, read-before-pin)
     const covers = await dav.propfind('Shiori/covers/', 1);
     assert.ok(covers.filter((x) => !x.self).length >= parseExport(fixture.text).imgs.size);
     // the token never lands in synced data or in plain settings

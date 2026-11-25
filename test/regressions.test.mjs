@@ -170,3 +170,22 @@ test('genre names scraped on pin map to MangaPin tag ids (case/punctuation/alt n
   const { tagIdsFromNames } = await import('../src/lib/labels.js');
   assert.deepEqual(tagIdsFromNames(['Action', ' fantasy ', 'Slice of Life', 'shônen', 'Not A Genre', 'ACTION']), [60, 81, 126, 11]);
 });
+
+test('reading before pinning: chapter and series pages map to one series; forward only; capped', async () => {
+  const { noteSeen, seriesOf, seenKey } = await import('../src/lib/tracker.js');
+  const keyOf = (u) => { const s = seriesOf(u); return seenKey(s.siteId, s.slug); };
+  // chapter page and series page of the same series give the same key
+  assert.equal(keyOf('https://arenascan.com/a-portrait-of-pride-chapter-23/'), keyOf('https://arenascan.com/manga/a-portrait-of-pride/'));
+  assert.equal(keyOf('https://en-thunderscans.com/kaiju-chapter-5/'), keyOf('https://en-thunderscans.com/comics/0086250808-kaiju/'));
+  assert.equal(keyOf('https://comix.to/title/1j7n-x/9866083-chapter-68'), keyOf('https://comix.to/title/1j7n-x'));
+  assert.equal(keyOf('https://www.webtoon.xyz/read/tower-of-god/chapter-600/'), keyOf('https://www.webtoon.xyz/read/tower-of-god/'));
+  const seen = {};
+  assert.equal(noteSeen(seen, 'https://arenascan.com/a-portrait-of-pride-chapter-23/', 1), true);
+  assert.equal(noteSeen(seen, 'https://arenascan.com/a-portrait-of-pride-chapter-9/', 2), false); // going back
+  assert.equal(noteSeen(seen, 'https://arenascan.com/manga/a-portrait-of-pride/', 3), false); // series page: no chapter
+  assert.deepEqual(seen[keyOf('https://arenascan.com/manga/a-portrait-of-pride/')], { chap: 23, slug: 'a-portrait-of-pride-chapter-23', ts: 1 });
+  assert.equal(noteSeen(seen, 'https://www.webtoon.xyz/read/tower-of-god/chapter-600/', 4), true);
+  assert.equal(seen[keyOf('https://www.webtoon.xyz/read/tower-of-god/')].chap, 600);
+  for (let i = 0; i < 600; i++) noteSeen(seen, `https://arenascan.com/s${i}-chapter-1/`, 10 + i);
+  assert.equal(Object.keys(seen).length, 500);
+});

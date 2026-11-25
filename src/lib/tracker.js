@@ -1,6 +1,6 @@
 // Tab URL -> pinned entry + chapter, and forward-only progress updates. Pure functions.
 
-import { matchUrl, sameSeries, entrySlug, matchChapterForSeries } from './adapters.js';
+import { matchUrl, sameSeries, entrySlug, matchChapterForSeries, slugKey } from './adapters.js';
 import { setProgress } from './library.js';
 import { withField } from './mangapin.js';
 
@@ -94,4 +94,40 @@ export function trackVisit(lib, url, now = Date.now()) {
     lib.entries.set(entry.id, e);
   }
   return entry.id;
+}
+
+// ---- reading before pinning -------------------------------------------------------------
+
+const GENERIC_CHAPTER_TAIL = /(?:\/|-)(?:chapter|chap|ch|episode|ep)[-_ .]?\d[^/]*\/?$/i;
+const SEEN_MAX = 500;
+
+/** Series identity (+ chapter if it is a chapter page) for any URL, pinned or not. */
+export function seriesOf(url) {
+  const m = matchUrl(url);
+  if (m && m.siteId) return m.slug ? { siteId: m.siteId, slug: m.slug, chap: m.kind === 'chapter' ? m.chap : null, chapSlug: m.chapSlug } : null;
+  let u;
+  try { u = new URL(url); } catch { return null; }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null;
+  // generic site: like MangaPin's local sites, the slug is the series path on that host
+  const slug = u.pathname.replace(GENERIC_CHAPTER_TAIL, '').replace(/\/+$/, '') || '/';
+  return { siteId: u.hostname, slug, chap: genericChapter(u.pathname), generic: true };
+}
+
+export const seenKey = (siteId, slug) => `${siteId}|${slugKey(siteId, slug)}`;
+
+/**
+ * Remember the furthest chapter read of a series that is not pinned (local only, never synced).
+ * Mutates `seen` ({key: {chap, slug?, ts}}); returns true if it changed.
+ */
+export function noteSeen(seen, url, now = Date.now()) {
+  const s = seriesOf(url);
+  if (!s || typeof s.chap !== 'number') return false;
+  const k = seenKey(s.siteId, s.slug);
+  if (seen[k] && seen[k].chap >= s.chap) return false; // forward only
+  seen[k] = s.generic || !s.chapSlug ? { chap: s.chap, ts: now } : { chap: s.chap, slug: s.chapSlug, ts: now };
+  const keys = Object.keys(seen);
+  if (keys.length > SEEN_MAX) {
+    keys.sort((a, b) => seen[a].ts - seen[b].ts).slice(0, keys.length - SEEN_MAX).forEach((x) => delete seen[x]);
+  }
+  return true;
 }

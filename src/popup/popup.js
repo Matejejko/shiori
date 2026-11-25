@@ -73,6 +73,7 @@ async function renderCurrent(lib, covers) {
       h('div', { class: 'muted small', text: supported
         ? (cur.match.kind === 'chapter' ? `Chapter ${fmtChap(cur.match.chap)} of “${cur.match.slug}”` : `“${cur.match.slug}”`)
         : 'Pinning uses this page’s hostname and path (generic site).' }),
+      cur.seen ? h('div', { class: 'small read', text: `You've read up to chapter ${fmtChap(cur.seen.chap)}. Pinning starts there.` }) : null,
       h('form', { class: 'stack', on: { submit: async (ev) => {
         ev.preventDefault();
         btn.disabled = true; status.textContent = 'Pinning… (fetching cover)';

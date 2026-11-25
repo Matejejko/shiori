@@ -8,7 +8,7 @@ import { syncOnce } from './lib/sync.js';
 import { planImport, exportString, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
-import { locate, trackVisit } from './lib/tracker.js';
+import { locate, trackVisit, seriesOf, seenKey, noteSeen } from './lib/tracker.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName } from './lib/adapters.js';
 
@@ -125,6 +125,11 @@ api.tabs.onUpdated.addListener((tabId, change, tab) => {
     const lib = await store.loadLibrary();
     const id = trackVisit(lib, url);
     if (id) await store.saveLibrary(lib);
+    else if (!locate(lib, url).entry) {
+      // not pinned (yet): remember how far you read, so pinning later starts there
+      const { seen = {} } = await api.storage.local.get('seen');
+      if (noteSeen(seen, url)) await api.storage.local.set({ seen });
+    }
   }).catch((e) => console.warn('[shiori track]', e));
 });
 api.tabs.onRemoved.addListener((tabId) => lastSeen.delete(tabId));
@@ -251,12 +256,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
   let siteId, slug;
   if (match && match.siteId && !match.slug) throw new Error('This page is not a series or chapter page.');
   if (match && match.siteId) { siteId = match.siteId; slug = match.slug; }
-  else {
-    // generic site: like MangaPin's local sites, the slug is the series path on that host
-    const u = new URL(tab.url);
-    siteId = u.hostname;
-    slug = u.pathname.replace(/(?:\/|-)(?:chapter|chap|ch|episode|ep)[-_ .]?\d[^/]*\/?$/i, '').replace(/\/+$/, '') || '/';
-  }
+  else ({ siteId, slug } = seriesOf(tab.url)); // generic site: the series path on that host
   let scraped = { h1: '', ogTitle: '', title: tab.title || '', imgs: [] };
   try {
     const [res] = await api.scripting.executeScript({ target: { tabId }, func: scrapePage });
@@ -269,6 +269,12 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
     try { cover = await makeCover(await fetchImage(src)); break; } catch { /* try next */ }
   }
   const now = Date.now();
+  // furthest of: the chapter on this page, the chapters you read before pinning
+  const here = seriesOf(tab.url);
+  const { seen = {} } = await api.storage.local.get('seen');
+  const before = seen[seenKey(siteId, slug)];
+  const page = here && typeof here.chap === 'number' ? { chap: here.chap, slug: here.generic ? undefined : here.chapSlug } : null;
+  const readSoFar = [page, before].filter(Boolean).sort((a, b) => b.chap - a.chap)[0] || null;
   return store.withLock(async () => {
     const lib = await store.loadLibrary();
     const dup = findBySeries(lib, siteId, slug);
@@ -279,14 +285,14 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
       url: match && match.kind === 'series' ? tab.url.split('#')[0] : seriesUrl({ siteId, slug }) || undefined,
       name: cleanName(nameOverride || scraped.h1 || scraped.ogTitle || scraped.title, new URL(tab.url).hostname) || slug,
       img: cover ? cover.key : undefined,
-      progress: match && match.kind === 'chapter' && typeof match.chap === 'number'
-        ? (match.chapSlug ? { chap: match.chap, slug: match.chapSlug, ts: now } : { chap: match.chap, ts: now }) : undefined,
+      progress: readSoFar ? (readSoFar.slug ? { chap: readSoFar.chap, slug: readSoFar.slug, ts: now } : { chap: readSoFar.chap, ts: now }) : undefined,
       cLang: 'en', folder: Number(folder) || 1, tags: tagIdsFromNames(scraped.genres || []), ts: now, createTs: now, id: newId(new Set(lib.entries.keys())),
     };
     for (const k of ENTRY_FIELD_ORDER) if (fields[k] !== undefined) e[k] = fields[k];
     if (cover) await store.putCovers([[cover.key, cover.b64]]);
     addEntry(lib, e, now);
     await store.saveLibrary(lib);
+    if (before) { delete seen[seenKey(siteId, slug)]; await api.storage.local.set({ seen }); }
     // look up its chapters right away instead of waiting for the 6-hourly check
     if (getAdapter(siteId)?.list) setTimeout(() => runReleaseChecks({ ids: [e.id], force: true }).catch(() => {}), 0);
     return { pinned: true, id: e.id, cover: !!cover };
@@ -305,7 +311,12 @@ const handlers = {
     const tab = await api.tabs.get(tabId);
     const lib = await store.loadLibrary();
     const { entry, match } = locate(lib, tab.url || '');
-    return { url: tab.url, title: tab.title, entry, match, site: match ? siteName(match.siteId) : null };
+    let seen = null;
+    if (!entry) {
+      const s = seriesOf(tab.url || '');
+      if (s) seen = ((await api.storage.local.get('seen')).seen || {})[seenKey(s.siteId, s.slug)] || null;
+    }
+    return { url: tab.url, title: tab.title, entry, match, seen, site: match ? siteName(match.siteId) : null };
   },
   async pin({ tabId, name, folder }) { return pinTab(tabId, { name, folder }); },
   async setProgress({ id, chap, manual = true }) {
