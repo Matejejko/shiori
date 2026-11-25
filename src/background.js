@@ -8,7 +8,7 @@ import { syncOnce } from './lib/sync.js';
 import { planImport, exportString, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
-import { locate, trackVisit, seriesOf, seenKey, noteSeen } from './lib/tracker.js';
+import { locate, trackVisit, seriesOf, seenKey, seenFor, noteSeen } from './lib/tracker.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName } from './lib/adapters.js';
 
@@ -272,7 +272,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
   // furthest of: the chapter on this page, the chapters you read before pinning
   const here = seriesOf(tab.url);
   const { seen = {} } = await api.storage.local.get('seen');
-  const before = seen[seenKey(siteId, slug)];
+  const before = seenFor(seen, siteId, slug);
   const page = here && typeof here.chap === 'number' ? { chap: here.chap, slug: here.generic ? undefined : here.chapSlug } : null;
   const readSoFar = [page, before].filter(Boolean).sort((a, b) => b.chap - a.chap)[0] || null;
   return store.withLock(async () => {
@@ -314,7 +314,7 @@ const handlers = {
     let seen = null;
     if (!entry) {
       const s = seriesOf(tab.url || '');
-      if (s) seen = ((await api.storage.local.get('seen')).seen || {})[seenKey(s.siteId, s.slug)] || null;
+      if (s) seen = seenFor((await api.storage.local.get('seen')).seen, s.siteId, s.slug);
     }
     return { url: tab.url, title: tab.title, entry, match, seen, site: match ? siteName(match.siteId) : null };
   },

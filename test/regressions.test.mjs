@@ -171,7 +171,7 @@ test('genre names scraped on pin map to MangaPin tag ids (case/punctuation/alt n
   assert.deepEqual(tagIdsFromNames(['Action', ' fantasy ', 'Slice of Life', 'shônen', 'Not A Genre', 'ACTION']), [60, 81, 126, 11]);
 });
 
-test('reading before pinning: chapter and series pages map to one series; forward only; capped', async () => {
+test('reading before pinning: chapter and series pages map to one series; forward only; max 100, 30 days', async () => {
   const { noteSeen, seriesOf, seenKey } = await import('../src/lib/tracker.js');
   const keyOf = (u) => { const s = seriesOf(u); return seenKey(s.siteId, s.slug); };
   // chapter page and series page of the same series give the same key
@@ -186,6 +186,15 @@ test('reading before pinning: chapter and series pages map to one series; forwar
   assert.deepEqual(seen[keyOf('https://arenascan.com/manga/a-portrait-of-pride/')], { chap: 23, slug: 'a-portrait-of-pride-chapter-23', ts: 1 });
   assert.equal(noteSeen(seen, 'https://www.webtoon.xyz/read/tower-of-god/chapter-600/', 4), true);
   assert.equal(seen[keyOf('https://www.webtoon.xyz/read/tower-of-god/')].chap, 600);
-  for (let i = 0; i < 600; i++) noteSeen(seen, `https://arenascan.com/s${i}-chapter-1/`, 10 + i);
-  assert.equal(Object.keys(seen).length, 500);
+  for (let i = 0; i < 300; i++) noteSeen(seen, `https://arenascan.com/s${i}-chapter-1/`, 10 + i);
+  assert.equal(Object.keys(seen).length, 100);
+  // reads you never pinned are forgotten after 30 days
+  const { seenFor } = await import('../src/lib/tracker.js');
+  const day = 86400e3;
+  const old = {};
+  noteSeen(old, 'https://arenascan.com/a-portrait-of-pride-chapter-23/', 0);
+  assert.equal(seenFor(old, 'arena', 'a-portrait-of-pride', 29 * day).chap, 23);
+  assert.equal(seenFor(old, 'arena', 'a-portrait-of-pride', 31 * day), null);
+  noteSeen(old, 'https://arenascan.com/other-chapter-1/', 31 * day);
+  assert.deepEqual(Object.keys(old), ['arena|other']);
 });

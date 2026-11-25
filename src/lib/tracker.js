@@ -99,7 +99,8 @@ export function trackVisit(lib, url, now = Date.now()) {
 // ---- reading before pinning -------------------------------------------------------------
 
 const GENERIC_CHAPTER_TAIL = /(?:\/|-)(?:chapter|chap|ch|episode|ep)[-_ .]?\d[^/]*\/?$/i;
-const SEEN_MAX = 500;
+const SEEN_MAX = 100;
+const SEEN_TTL = 30 * 86400e3; // forget reads you never pinned after 30 days
 
 /** Series identity (+ chapter if it is a chapter page) for any URL, pinned or not. */
 export function seriesOf(url) {
@@ -115,6 +116,12 @@ export function seriesOf(url) {
 
 export const seenKey = (siteId, slug) => `${siteId}|${slugKey(siteId, slug)}`;
 
+/** The remembered read for a series, unless it has expired. */
+export function seenFor(seen, siteId, slug, now = Date.now()) {
+  const r = seen && seen[seenKey(siteId, slug)];
+  return r && now - r.ts < SEEN_TTL ? r : null;
+}
+
 /**
  * Remember the furthest chapter read of a series that is not pinned (local only, never synced).
  * Mutates `seen` ({key: {chap, slug?, ts}}); returns true if it changed.
@@ -122,6 +129,7 @@ export const seenKey = (siteId, slug) => `${siteId}|${slugKey(siteId, slug)}`;
 export function noteSeen(seen, url, now = Date.now()) {
   const s = seriesOf(url);
   if (!s || typeof s.chap !== 'number') return false;
+  for (const [x, r] of Object.entries(seen)) if (now - r.ts >= SEEN_TTL) delete seen[x];
   const k = seenKey(s.siteId, s.slug);
   if (seen[k] && seen[k].chap >= s.chap) return false; // forward only
   seen[k] = s.generic || !s.chapSlug ? { chap: s.chap, ts: now } : { chap: s.chap, slug: s.chapSlug, ts: now };
