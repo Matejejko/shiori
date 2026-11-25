@@ -61,7 +61,7 @@ resolve even on your LAN.
 - `imgs` are written in first-reference order; covers referenced but missing from `imgs`
   (MangaPin loses some) are kept as references and reported in the import dry run.
 - `folder`, `type` and `tags` stay raw numbers; Library → Labels gives them names (synced).
-- Export filename: `MangaPinYYYYMMDDHHmm.json` (local time).
+- Export filename: `Shiori-YYYYMMDDHHmm.json` (local time); the content is MangaPin's format.
 
 ## How merging works (and where it deviates from the original plan)
 

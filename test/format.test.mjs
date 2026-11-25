@@ -39,7 +39,7 @@ test('cover key helpers', () => {
 });
 
 test('export filename format', () => {
-  assert.equal(exportFileName(new Date(2026, 0, 5, 7, 9)), 'MangaPin202601050709.json');
+  assert.equal(exportFileName(new Date(2026, 0, 5, 7, 9)), 'Shiori-202601050709.json');
 });
 
 test('withField keeps existing order and inserts new keys in MangaPin order', () => {

@@ -43,7 +43,7 @@ export function verifyCover(key, b64) {
 
 const pad = (n) => String(n).padStart(2, '0');
 export function exportFileName(d = new Date()) {
-  return `MangaPin${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}.json`;
+  return `Shiori-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}.json`;
 }
 
 // defineProperty, not assignment: an own "__proto__" key (JSON.parse creates one) must stay data

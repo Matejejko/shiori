@@ -108,7 +108,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   await t.test('export through the UI is byte-identical to the imported file', async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=io]');
     const [dl] = await Promise.all([app.waitForEvent('download'), app.click('#export')]);
-    assert.match(dl.suggestedFilename(), /^MangaPin\d{12}\.json$/);
+    assert.match(dl.suggestedFilename(), /^Shiori-\d{12}\.json$/);
     const text = readFileSync(await dl.path(), 'utf8');
     assert.equal(text.length, fixture.text.length);
     assert.ok(text === fixture.text, 'exported file differs from the import');
