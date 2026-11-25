@@ -3,19 +3,46 @@ import { formPatch } from '../lib/library.js';
 import { DEFAULT_LABELS } from '../lib/labels.js';
 
 const $ = (id) => document.getElementById(id);
-const state = { lib: null, covers: {}, st: null };
+const state = { lib: null, covers: {}, st: null, folder: '' };
 
 // ---------------------------------------------------------------------------------------
 // tabs
 
-function showTab(name) {
-  for (const b of document.querySelectorAll('.tab')) b.classList.toggle('on', b.dataset.tab === name);
+const SETTINGS_PAGES = ['settings', 'io', 'labels'];
+let lastSettingsPage = 'settings';
+/** name: 'library' (folder tabs) or a settings page; folder: '' = all, else the folder number */
+function showTab(name, folder) {
+  if (!SETTINGS_PAGES.includes(name)) name = 'library';
+  if (name === 'library' && folder !== undefined) state.folder = String(folder);
+  else lastSettingsPage = name;
+  const inSettings = name !== 'library';
+  document.body.classList.toggle('in-settings', inSettings);
+  $('openSettings').classList.toggle('on', inSettings);
+  $('openSettings').setAttribute('aria-pressed', String(inSettings));
+  for (const b of document.querySelectorAll('.tab')) {
+    const on = b.dataset.tab === name && (name !== 'library' || (b.dataset.folder ?? '') === state.folder);
+    b.classList.toggle('on', on);
+    b.setAttribute('aria-selected', String(on));
+  }
   for (const p of document.querySelectorAll('.pane')) p.hidden = p.id !== 'tab-' + name;
-  try { localStorage.setItem('shiori.tab', name); } catch { /* ignore */ }
+  try { localStorage.setItem('shiori.tab', name); localStorage.setItem('shiori.folder', state.folder); } catch { /* ignore */ }
+  if (name === 'library' && state.lib) renderGrid();
   if (name === 'settings') renderSettings();
   if (name === 'labels') renderLabels();
 }
-for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => showTab(b.dataset.tab));
+$('folderTabs').addEventListener('click', (ev) => { const b = ev.target.closest('.tab'); if (b) showTab('library', b.dataset.folder); });
+for (const b of $('settingsNav').querySelectorAll('.tab')) b.addEventListener('click', () => showTab(b.dataset.tab));
+$('openSettings').addEventListener('click', () => showTab(lastSettingsPage));
+
+/** One tab per folder (defaults + named + used), each with its series count. */
+function renderFolderTabs() {
+  const nav = $('folderTabs');
+  const count = (f) => state.lib.entries.filter((e) => f === '' || String(e.folder) === f).length;
+  const tab = (f, name) => h('button', { type: 'button', role: 'tab', class: 'tab', dataset: { tab: 'library', folder: f } },
+    name, h('span', { class: 'count', text: String(count(f)) }));
+  clear(nav).append(tab('', 'All'), ...knownKeys('folder').map((f) => tab(String(f), labelFor('folder', f))));
+  if (!document.body.classList.contains('in-settings')) showTab('library', state.folder);
+}
 
 // ---------------------------------------------------------------------------------------
 // data
@@ -27,6 +54,7 @@ async function load() {
   if (keys.length) Object.assign(state.covers, await send('covers', { keys }));
   renderSyncPill();
   renderFilters();
+  renderFolderTabs();
   renderGrid();
 }
 
@@ -67,7 +95,6 @@ function fillSelect(sel, all, items) {
   sel.value = items.some(([v]) => String(v) === cur) ? cur : '';
 }
 function renderFilters() {
-  fillSelect($('fFolder'), 'All folders', knownKeys('folder').map((f) => [f, labelFor('folder', f)]));
   fillSelect($('fType'), 'Any type', knownKeys('type').map((f) => [f, labelFor('type', f)]));
   fillTagPicker($('fTag'), knownKeys('tag'), new Set(pickedTags($('fTag'))), 'Any tag');
   fillSelect($('fSite'), 'All sites', distinct(state.lib.entries.map((e) => e.siteId)).map((s) => [s, s]));
@@ -77,7 +104,7 @@ const unreadBy = (e) => (typeof e.latest?.chap === 'number' && typeof e.progress
 
 function renderGrid() {
   const q = $('q').value.trim().toLowerCase();
-  const f = { folder: $('fFolder').value, type: $('fType').value, tags: pickedTags($('fTag')), site: $('fSite').value, unread: $('fUnread').checked };
+  const f = { folder: state.folder, type: $('fType').value, tags: pickedTags($('fTag')), site: $('fSite').value, unread: $('fUnread').checked };
   let list = state.lib.entries.filter((e) => {
     if (q && !(`${e.name} ${e.siteId} ${e.slug}`.toLowerCase().includes(q))) return false;
     if (f.folder && String(e.folder) !== f.folder) return false;
@@ -117,7 +144,7 @@ function renderGrid() {
   if (!list.length) grid.append(h('p', { class: 'muted empty', text: state.lib.entries.length ? 'No series match the filters.' : 'Library is empty — import a MangaPin export or pin a series from the popup.' }));
 }
 
-for (const id of ['q', 'fFolder', 'fType', 'fTag', 'fSite', 'fUnread', 'sort']) $(id).addEventListener('input', renderGrid);
+for (const id of ['q', 'fType', 'fTag', 'fSite', 'fUnread', 'sort']) $(id).addEventListener('input', renderGrid);
 $('checkAll').addEventListener('click', async () => {
   $('checkAll').disabled = true; $('checkAll').textContent = 'Checking…';
   try {
@@ -465,7 +492,7 @@ api.runtime.onMessage.addListener((m) => {
 });
 
 load().then(() => {
-  let tab = 'library';
-  try { tab = localStorage.getItem('shiori.tab') || 'library'; } catch { /* ignore */ }
-  showTab(tab);
+  let tab = 'library', folder = '';
+  try { tab = localStorage.getItem('shiori.tab') || 'library'; folder = localStorage.getItem('shiori.folder') || ''; } catch { /* ignore */ }
+  showTab(tab, folder);
 }).catch((e) => { clear($('grid')).append(h('p', { class: 'err-text', text: 'Error: ' + e.message })); });

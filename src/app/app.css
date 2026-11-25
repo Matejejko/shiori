@@ -215,3 +215,20 @@ dialog#confirm {
 .confirm-box .c-body { margin: 0; color: var(--ink-2); line-height: 1.5; }
 .c-actions { display: flex; justify-content: flex-end; gap: var(--s2); margin: var(--s4) calc(-1 * var(--s5)) 0; padding: var(--s3) var(--s5); border-top: 1px solid var(--line); background: var(--paper); }
 .num.big.quiet { font-size: 26px; color: var(--ink-2); font-weight: 700; }
+
+/* ---- folder tabs + settings area ---------------------------------------------------- */
+#folderTabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+#folderTabs .tab { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.tab .count { font-size: 11px; font-weight: 600; color: var(--ink-2); background: var(--line); border-radius: 999px; padding: 0 6px; line-height: 17px; font-variant-numeric: tabular-nums; }
+.tab.on .count { background: var(--ai-soft); color: var(--ink); }
+.gear { width: var(--ctl-h); padding: 0; display: inline-grid; place-items: center; }
+.gear.on { background: var(--ai); border-color: var(--ai); color: var(--ai-ink); }
+body.in-settings #folderTabs .tab { box-shadow: none; color: var(--ink-2); font-weight: 500; }
+body.in-settings #folderTabs .tab .count { background: var(--line); color: var(--ink-2); }
+#settingsNav { display: flex; gap: var(--s1); margin: 0 0 var(--s4); border-bottom: 1px solid var(--line); }
+body:not(.in-settings) #settingsNav { display: none; }
+#settingsNav .tab { min-height: 44px; }
+.top { flex-wrap: nowrap; gap: var(--s3); }
+#folderTabs { flex: 1 1 auto; min-width: 0; }
+.top .syncbox, .top .gear { flex: none; }
+@media (max-width: 1000px) { .top .pill { max-width: 90px; } }

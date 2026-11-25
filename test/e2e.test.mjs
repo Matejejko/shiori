@@ -56,14 +56,14 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   const expected = parseExport(fixture.text).entries.length;
 
   await t.test(`import shows ${expected} entries`, async () => {
-    await app.click('button[data-tab=io]');
+    await app.click('#openSettings'); await app.click('#settingsNav button[data-tab=io]');
     await app.setInputFiles('#file', fixture.path);
     await app.waitForSelector('#summary .summary');
     assert.match(await app.textContent('#summary'), new RegExp(`${expected} entries`));
     await app.click('#summary button');
     await app.waitForSelector('#summary .ok-text');
     assert.match(await app.textContent('#summary .ok-text'), new RegExp(`now has ${expected} entries`));
-    await app.click('button[data-tab=library]');
+    await app.click('#folderTabs button[data-folder=""]');
     await app.waitForFunction((n) => document.querySelectorAll('#grid .tile').length === n, expected);
     assert.equal(await app.textContent('#count'), `${expected} / ${expected}`);
     // tag filter: tick two tags -> only series that have both
@@ -95,7 +95,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   });
 
   await t.test('export through the UI is byte-identical to the imported file', async () => {
-    await app.click('button[data-tab=io]');
+    await app.click('#openSettings'); await app.click('#settingsNav button[data-tab=io]');
     const [dl] = await Promise.all([app.waitForEvent('download'), app.click('#export')]);
     assert.match(dl.suggestedFilename(), /^MangaPin\d{12}\.json$/);
     const text = readFileSync(await dl.path(), 'utf8');
@@ -222,7 +222,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   await t.test('settings + sync writes Shiori/library.json to OpenCloud', { skip: !env && 'no OpenCloud configured (test/opencloud/start.sh)' }, async () => {
     const dav = new WebDav(env);
     await dav.delete('Shiori').catch(() => {});
-    await app.click('button[data-tab=settings]');
+    await app.click('#openSettings'); await app.click('#settingsNav button[data-tab=settings]');
     await app.fill('#settings [name=davUrl]', env.url);
     await app.fill('#settings [name=user]', env.user);
     await app.fill('#settings [name=token]', env.token);
