@@ -56,7 +56,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   const expected = parseExport(fixture.text).entries.length;
 
   await t.test(`import shows ${expected} entries`, async () => {
-    await app.click('#openSettings'); await app.click('#settingsNav button[data-tab=io]');
+    await app.click('#openSettings'); await app.click('#menu button[data-tab=io]');
     await app.setInputFiles('#file', fixture.path);
     await app.waitForSelector('#summary .summary');
     assert.match(await app.textContent('#summary'), new RegExp(`${expected} entries`));
@@ -94,8 +94,19 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.click('#fTag summary');
   });
 
+  await t.test('☰ menu opens the Stats page with the library totals', async () => {
+    await app.click('#openSettings');
+    await app.waitForSelector('#menu:popover-open');
+    await app.click('#menu button[data-tab=stats]');
+    await app.waitForSelector('#stats .stat-tile');
+    assert.equal(await app.evaluate(() => document.querySelector('#menu').matches(':popover-open')), false);
+    const chapters = parseExport(fixture.text).entries.reduce((s, x) => s + (typeof x.obj.progress?.chap === 'number' ? Math.floor(x.obj.progress.chap) : 0), 0);
+    assert.equal(await app.textContent('#stats .stat-tile .v'), chapters.toLocaleString('en-US'));
+    await app.click('#folderTabs button[data-folder=""]');
+  });
+
   await t.test('export through the UI is byte-identical to the imported file', async () => {
-    await app.click('#openSettings'); await app.click('#settingsNav button[data-tab=io]');
+    await app.click('#openSettings'); await app.click('#menu button[data-tab=io]');
     const [dl] = await Promise.all([app.waitForEvent('download'), app.click('#export')]);
     assert.match(dl.suggestedFilename(), /^MangaPin\d{12}\.json$/);
     const text = readFileSync(await dl.path(), 'utf8');
@@ -222,7 +233,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   await t.test('settings + sync writes Shiori/library.json to OpenCloud', { skip: !env && 'no OpenCloud configured (test/opencloud/start.sh)' }, async () => {
     const dav = new WebDav(env);
     await dav.delete('Shiori').catch(() => {});
-    await app.click('#openSettings'); await app.click('#settingsNav button[data-tab=settings]');
+    await app.click('#openSettings'); await app.click('#menu button[data-tab=settings]');
     await app.fill('#settings [name=davUrl]', env.url);
     await app.fill('#settings [name=user]', env.user);
     await app.fill('#settings [name=token]', env.token);

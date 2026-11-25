@@ -1,6 +1,7 @@
 import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
 import { formPatch } from '../lib/library.js';
 import { DEFAULT_LABELS } from '../lib/labels.js';
+import { computeStats, MIN_PER_CHAPTER } from '../lib/stats.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { lib: null, covers: {}, st: null, folder: '' };
@@ -8,13 +9,11 @@ const state = { lib: null, covers: {}, st: null, folder: '' };
 // ---------------------------------------------------------------------------------------
 // tabs
 
-const SETTINGS_PAGES = ['settings', 'io', 'labels'];
-let lastSettingsPage = 'settings';
+const SETTINGS_PAGES = ['stats', 'settings', 'io', 'labels'];
 /** name: 'library' (folder tabs) or a settings page; folder: '' = all, else the folder number */
 function showTab(name, folder) {
   if (!SETTINGS_PAGES.includes(name)) name = 'library';
   if (name === 'library' && folder !== undefined) state.folder = String(folder);
-  else lastSettingsPage = name;
   const inSettings = name !== 'library';
   document.body.classList.toggle('in-settings', inSettings);
   $('openSettings').classList.toggle('on', inSettings);
@@ -29,10 +28,12 @@ function showTab(name, folder) {
   if (name === 'library' && state.lib) renderGrid();
   if (name === 'settings') renderSettings();
   if (name === 'labels') renderLabels();
+  if (name === 'stats') renderStats();
 }
 $('folderTabs').addEventListener('click', (ev) => { const b = ev.target.closest('.tab'); if (b) showTab('library', b.dataset.folder); });
 for (const b of $('settingsNav').querySelectorAll('.tab')) b.addEventListener('click', () => showTab(b.dataset.tab));
-$('openSettings').addEventListener('click', () => showTab(lastSettingsPage));
+// ☰ menu (a popover: closes on outside click / Escape by itself)
+for (const b of $('menu').querySelectorAll('button')) b.addEventListener('click', () => { $('menu').hidePopover(); showTab(b.dataset.tab); });
 
 /** One tab per folder (defaults + named + used), each with its series count. */
 function renderFolderTabs() {
@@ -290,6 +291,44 @@ function openEditor(id) {
   ));
   dlg.classList.remove('editing'); // always open on the details view
   dlg.showModal();
+}
+
+// ---------------------------------------------------------------------------------------
+// stats
+
+const fmtInt = (n) => Math.round(n).toLocaleString();
+function statTile(value, label, sub, cls = '') {
+  return h('div', { class: 'stat-tile ' + cls }, h('div', { class: 'v', text: value }), h('div', { class: 'l', text: label }), sub ? h('div', { class: 'sub', text: sub }) : null);
+}
+async function renderStats() {
+  if (!state.lib) return;
+  let seen = {};
+  try { seen = (await api.storage.local.get('seen')).seen || {}; } catch { /* page without storage access */ }
+  const s = computeStats(state.lib.entries, seen);
+  const box = clear($('stats'));
+  box.append(
+    h('section', { class: 'stat-group' }, h('h2', { text: 'Reading' }),
+      h('div', { class: 'stat-grid' },
+        statTile(fmtInt(s.chapters), 'Chapters read', 'in pinned series', 'hero'),
+        statTile(fmtInt(s.chaptersAll), 'Chapters incl. unpinned', s.unpinnedSeries ? `+ ${s.unpinnedSeries} series read but not pinned (30 days)` : 'nothing read unpinned in the last 30 days', 'hero'),
+        statTile(`≈ ${fmtInt(s.hours)} h`, 'Time reading', `estimate: ${MIN_PER_CHAPTER} min per chapter`, 'hero'),
+        statTile(String(s.activeWeek), 'Series read this week'),
+        statTile(fmtChap(s.waiting), 'Chapters waiting', `in ${s.withNew} series with new chapters`),
+        statTile(s.longest ? fmtChap(s.longest.chap) : '–', 'Longest read', s.longest ? s.longest.name : ''))),
+    h('section', { class: 'stat-group' }, h('h2', { text: 'Library' }),
+      h('div', { class: 'stat-grid' },
+        statTile(String(s.series), 'In library'),
+        ...knownKeys('folder').map((f) => statTile(String(s.folders.get(f) || 0), labelFor('folder', f))),
+        statTile(String(s.notStarted), 'Not started'),
+        statTile(String(s.added30), 'Added in 30 days'),
+        statTile(String(s.finishedYear), 'Finished this year'),
+        statTile(s.avgScore === null ? '–' : (Math.round(s.avgScore * 10) / 10).toString(), 'Average score', s.scored ? `${s.scored} scored` : 'nothing scored yet'))),
+    h('div', { class: 'stat-cols' },
+      h('section', { class: 'stat-group' }, h('h2', { text: 'Most read sites' }),
+        s.topSites.length ? h('ol', { class: 'rank' }, s.topSites.map(([site, n]) => h('li', {}, h('span', { text: site }), h('span', { class: 'n', text: `${fmtInt(n)} ch` })))) : h('p', { class: 'muted', text: 'Nothing read yet.' })),
+      h('section', { class: 'stat-group' }, h('h2', { text: 'Top tags' }),
+        s.topTags.length ? h('div', { class: 'tags' }, s.topTags.map(([t, n]) => h('span', { class: 'chip' }, labelFor('tag', t), h('span', { class: 'n', text: String(n) })))) : h('p', { class: 'muted', text: 'No tags yet.' }))),
+  );
 }
 
 // ---------------------------------------------------------------------------------------

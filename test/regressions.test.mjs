@@ -198,3 +198,31 @@ test('reading before pinning: chapter and series pages map to one series; forwar
   noteSeen(old, 'https://arenascan.com/other-chapter-1/', 31 * day);
   assert.deepEqual(Object.keys(old), ['arena|other']);
 });
+
+test('stats: chapters (pinned and with recent unpinned reads), folders, waiting, tops', async () => {
+  const { computeStats, MIN_PER_CHAPTER } = await import('../src/lib/stats.js');
+  const now = Date.UTC(2026, 10, 25), day = 86400e3;
+  const e = (o) => ({ siteId: 'comix', slug: 's', name: 'n', folder: 1, tags: [], ts: 1, createTs: now - 90 * day, id: 'x', ...o });
+  const entries = [
+    e({ name: 'A', progress: { chap: 120.5, ts: now - day }, latest: { chap: 125, ts: 1 }, tags: [81, 60], score: 8 }),
+    e({ name: 'B', progress: { chap: 30, ts: now - 30 * day }, latest: { chap: 30, ts: 1 }, folder: 4, tags: [81], endTs: now - day, siteId: 'asura' }),
+    e({ name: 'C', folder: 3, latest: { chap: 10, ts: 1 }, createTs: now - 2 * day, score: 6 }),
+  ];
+  const seen = { 'arena|x': { chap: 23, ts: now - day }, 'arena|old': { chap: 50, ts: now - 40 * day } };
+  const s = computeStats(entries, seen, now);
+  assert.equal(s.chapters, 150); // 120 + 30 (a half chapter is not a finished chapter)
+  assert.equal(s.chaptersAll, 173); // + 23 read before pinning; the 40-day-old one has expired
+  assert.equal(s.unpinnedSeries, 1);
+  assert.equal(s.hours, (150 * MIN_PER_CHAPTER) / 60);
+  assert.deepEqual([...s.folders], [[1, 1], [4, 1], [3, 1]]);
+  assert.equal(s.waiting, 4.5);
+  assert.equal(s.withNew, 1);
+  assert.equal(s.notStarted, 1);
+  assert.equal(s.activeWeek, 1);
+  assert.equal(s.added30, 1);
+  assert.equal(s.finishedYear, 1);
+  assert.equal(s.avgScore, 7);
+  assert.deepEqual(s.topSites, [['comix', 120], ['asura', 30]]);
+  assert.deepEqual(s.topTags[0], [81, 2]);
+  assert.deepEqual(s.longest, { name: 'A', chap: 120.5 });
+});
