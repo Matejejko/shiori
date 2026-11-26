@@ -1,7 +1,7 @@
 // Pure library operations: import planning (dry run + apply), export, local edits.
 
 import { parseExport, serializeExport, referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
-import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels } from './merge.js';
+import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels, seriesKey } from './merge.js';
 
 export function emptyLibrary() {
   return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), top: null, keepImgs: [], layoutTs: 0 };
@@ -64,7 +64,7 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
     problems: parsed.problems.slice(0, 50),
     problemCount: parsed.problems.length,
     added: [], updated: [], unchanged: 0, removed: [], skippedDeleted: [], restored: [],
-    missingCovers: [], unverifiedCovers: [], newCovers: 0, duplicateSeries: [],
+    missingCovers: [], unverifiedCovers: [], newCovers: 0,
   };
 
   // Cover keys should be local:<bytes>:<md5>.webp of the data. Covers that do not verify are
@@ -78,14 +78,16 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
   const file = libFromParsed(parsed, (obj) => ({ r: typeof obj.ts === 'number' ? obj.ts : 0 }));
   let lib;
   if (mode === 'replace') {
-    const keep = new Set(file.entries.keys());
+    // a series counts as "in the file" whatever id it has here (it is merged, not deleted)
+    const fileSeries = new Set([...file.entries.values()].map(seriesKey));
+    const keep = new Set([...file.entries.keys(), ...[...local.entries].filter(([, e]) => fileSeries.has(seriesKey(e))).map(([id]) => id)]);
     const tombs = new Map(local.tombs);
     for (const [id, e] of local.entries) {
       if (keep.has(id)) continue;
       tombs.set(id, Math.max(now, editTs(e, local.meta.get(id)) + 1));
       summary.removed.push(short(e));
     }
-    for (const id of keep) {
+    for (const id of file.entries.keys()) {
       if (local.tombs.has(id) && !local.entries.has(id)) summary.restored.push(short(file.entries.get(id)));
       tombs.delete(id);
       // keeping/restoring a series is a user decision as of now: it must outlive any
@@ -94,7 +96,11 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
     }
     const kept = { ...local, entries: new Map([...local.entries].filter(([id]) => keep.has(id))), tombs: new Map() };
     const merged = mergeLibraries(file, kept);
-    lib = { ...merged, tombs, labels: local.labels || emptyLabels(), top: parsed.top, keepImgs: file.keepImgs, order: file.order.filter((id) => merged.entries.has(id)), layoutTs: now };
+    for (const [id, t] of merged.tombs) tombs.set(id, Math.max(tombs.get(id) ?? -Infinity, t)); // incl. folded duplicates
+    // the file's order, with each series under the id that survived de-duplication
+    const survivor = new Map([...merged.entries].map(([id, e]) => [seriesKey(e), id]));
+    const order = [...new Set([...file.order.map((id) => survivor.get(seriesKey(file.entries.get(id)))), ...merged.order])].filter((id) => merged.entries.has(id));
+    lib = { ...merged, tombs, labels: local.labels || emptyLabels(), top: parsed.top, keepImgs: file.keepImgs, order, layoutTs: now };
   } else {
     const skip = new Set([...file.entries.keys()].filter((id) => local.tombs.has(id) && !local.entries.has(id)));
     for (const id of skip) { summary.skippedDeleted.push(short(file.entries.get(id))); file.entries.delete(id); file.meta.delete(id); }
@@ -102,9 +108,12 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
     const merged = mergeLibraries({ ...local, layoutTs: now }, { ...file, layoutTs: 0 });
     lib = { ...merged, top: local.top || parsed.top, keepImgs: [...new Set([...(local.keepImgs || []), ...file.keepImgs])], layoutTs: now };
   }
+  // classify by series, so the same series under another id counts as updated, not added
+  const localBySeries = new Map([...local.entries.values()].map((e) => [seriesKey(e), e]));
+  const libBySeries = new Map([...lib.entries.values()].map((e) => [seriesKey(e), e]));
   for (const [id, e] of file.entries) {
-    const le = local.entries.get(id);
-    const me = lib.entries.get(id);
+    const le = local.entries.get(id) || localBySeries.get(seriesKey(e));
+    const me = libBySeries.get(seriesKey(e));
     if (!le) { if (!summary.restored.some((x) => x.id === id)) summary.added.push(short(e)); }
     else if (JSON.stringify(le) !== JSON.stringify(me)) summary.updated.push(short(e));
     else summary.unchanged++;
@@ -116,15 +125,6 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
       summary.missingCovers.push({ ...short(e), img: e.img });
     }
   }
-  // same series under different ids
-  const bySeries = new Map();
-  for (const e of lib.entries.values()) {
-    const k = e.siteId + '\u0000' + e.slug;
-    if (!bySeries.has(k)) bySeries.set(k, []);
-    bySeries.get(k).push(e);
-  }
-  for (const list of bySeries.values()) if (list.length > 1) summary.duplicateSeries.push(list.map(short));
-
   // "re-export is byte-identical" only when the file is plain JSON.stringify output, every entry
   // survived parsing (string ids, no duplicates) and, for replace, nothing else gets merged in
   summary.exact = parsed.canonical && !parsed.duplicateIds && !parsed.droppedEntries

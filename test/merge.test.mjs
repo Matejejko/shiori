@@ -166,7 +166,7 @@ test('library merge: commutative, idempotent and multi-device convergent', () =>
     let now = 10_000;
     const ids = ['Aaaaaaaaa1', 'Bbbbbbbbb2', 'Ccccccccc3', 'Ddddddddd4'];
     for (const id of ids) {
-      const e = { ...baseEntry(now), id };
+      const e = { ...baseEntry(now), id, slug: `s${id}` };
       for (const d of devices) if (R.bool(0.7)) addEntry(d, structuredClone(e));
     }
     for (let step = 0; step < 40; step++) {
@@ -179,7 +179,7 @@ test('library merge: commutative, idempotent and multi-device convergent', () =>
         devices[devices.indexOf(d)] = structuredClone(merged);
         continue;
       }
-      if (!d.entries.has(id)) { if (R.bool(0.2)) addEntry(d, { ...baseEntry(now), id }); continue; }
+      if (!d.entries.has(id)) { if (R.bool(0.2)) addEntry(d, { ...baseEntry(now), id, slug: `s${id}` }); continue; }
       if (R.bool(0.1)) { deleteEntry(d, id, now); continue; }
       const v = mutate(d.entries.get(id), d.meta.get(id), now);
       d.entries.set(id, v.entry); d.meta.set(id, v.meta);
@@ -195,5 +195,32 @@ test('library merge: commutative, idempotent and multi-device convergent', () =>
       assert.deepEqual(d.order, server.order);
     }
     for (const [id, e] of server.entries) assert.ok(!(server.tombs.get(id) > editTs(e, server.meta.get(id))));
+  }
+});
+
+test('same series under different ids (pinned on two devices, or imported) converges to one entry', () => {
+  for (let round = 0; round < 300; round++) {
+    const ids = ['Kkkkkkkkk1', 'Bbbbbbbbb2', 'Zzzzzzzzz3'];
+    const devices = ids.map((id) => {
+      const d = emptyLibrary();
+      addEntry(d, { ...baseEntry(1000 + R.int(0, 50)), id, slug: 'one-series' });
+      return d;
+    });
+    let server = emptyLibrary();
+    let now = 5000;
+    for (let step = 0; step < 30; step++) {
+      now += R.int(0, 3) * 10;
+      const i = R.int(0, devices.length - 1);
+      const d = devices[i];
+      if (R.bool(0.4)) { server = mergeLibraries(server, d); devices[i] = structuredClone(server); continue; }
+      const [id] = d.entries.keys();
+      if (!id) continue;
+      const v = mutate(d.entries.get(id), d.meta.get(id), now);
+      d.entries.set(id, v.entry); d.meta.set(id, v.meta);
+    }
+    for (let k = 0; k < 2; k++) for (let i = 0; i < devices.length; i++) { server = mergeLibraries(server, devices[i]); devices[i] = structuredClone(server); }
+    for (const d of devices) assert.equal(libraryFingerprint(d), libraryFingerprint(server));
+    assert.equal(server.entries.size, 1);
+    assert.equal([...server.entries.keys()][0], 'Bbbbbbbbb2'); // smallest id survives, everywhere
   }
 });

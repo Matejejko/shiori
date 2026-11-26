@@ -219,6 +219,14 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
       if (Object.values(seen).some((x) => x.chap === 23)) break;
       await new Promise((r) => setTimeout(r, 100));
     }
+    // Stats counts it before you pin: "incl. unpinned" = pinned chapters + 23
+    const statNums = async () => {
+      await app.click('#openSettings'); await app.click('#menu button[data-tab=stats]');
+      await app.waitForSelector('#stats .stat-tile');
+      return app.$$eval('#stats .stat-tile .v', (els) => els.slice(0, 2).map((x) => Number(x.textContent.replace(/[^0-9]/g, ''))));
+    };
+    const [pinnedCh, allCh] = await statNums();
+    assert.equal(allCh - pinnedCh, 23);
     await rd.goto('https://arenascan.com/manga/e2e-seen/');
     const rdTab = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://arenascan.com/manga/e2e-seen/' }))[0].id);
     const cur = await sw.evaluate((id) => self.shiori.handlers.currentTab({ tabId: id }), rdTab);
@@ -227,6 +235,12 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const seenEntry = await sw.evaluate(async (id) => self.shiori.store.getEntry(id), pr.id);
     assert.equal(seenEntry.progress.chap, 23);
     assert.equal(seenEntry.progress.slug, 'e2e-seen-chapter-23');
+    // after pinning, those 23 chapters count as pinned: both totals now agree
+    await app.click('#folderTabs button[data-folder=""]'); // leave Stats so it re-renders
+    const [pinnedAfter, allAfter] = await statNums();
+    assert.equal(pinnedAfter, pinnedCh + 23);
+    assert.equal(allAfter, pinnedAfter);
+    await app.click('#folderTabs button[data-folder=""]');
     await rd.close();
   });
 

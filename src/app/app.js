@@ -365,7 +365,6 @@ async function dryRun() {
       h('dt', { text: 'Covers missing everywhere' }), h('dd', { text: `${s.missingCovers.length} (kept as references)` }),
       s.unverifiedCovers.length ? [h('dt', { text: 'Covers not matching their key' }), h('dd', { class: 'err-text', text: `${s.unverifiedCovers.length} (kept for export, not synced)` })] : null,
       h('dt', { text: 'Re-export byte-identical to this file' }), h('dd', { text: s.exact ? 'yes' : 'no (other data is merged in, or the file has duplicates/odd entries)' }),
-      s.duplicateSeries.length ? [h('dt', { text: 'Same series twice' }), h('dd', { text: `${s.duplicateSeries.length} (different ids, kept both)` })] : null,
       s.problemCount ? [h('dt', { text: 'Warnings' }), h('dd', { text: String(s.problemCount) })] : null,
     ),
     s.added.length ? h('details', {}, h('summary', { text: 'New entries' }), names(s.added)) : null,

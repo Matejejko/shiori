@@ -77,6 +77,13 @@ associative and idempotent (property-tested), and every device converges.
 | `ts` | max |
 | tombstone | wins only if newer than the last *user* edit or read |
 
+**One series, one entry.** A series is identified by site + series slug (ignoring the rotating parts some
+sites put in their URLs), not by MangaPin's random id. If the same series ends up under two ids — pinned on
+two devices before they synced, or imported from a file that has it under another id — both are merged with
+the rules above into the one with the smaller id, and the other is deleted. Every device does the same, so
+they converge on the same single entry. Importing `xyz` at chapter 22 into a library that has `xyz` at
+chapter 12 therefore gives one `xyz` at chapter 22 (and a correction made after the file's reading still wins).
+
 Two deliberate deviations from "progress by newer progress.ts, rest by newer ts":
 
 1. **Progress = furthest read since your last correction.** Plain "newer progress.ts wins" regresses

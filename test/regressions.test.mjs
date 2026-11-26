@@ -232,3 +232,22 @@ test('MangaPin content types have names (no type = comic)', async () => {
   assert.equal(labelName(null, 'type', 1), 'Comic');
   assert.equal(labelName(null, 'type', 2), 'Novel');
 });
+
+test('importing a series you already have under another id replaces it, never duplicates (both modes)', async () => {
+  const now = Date.now();
+  const ent = (id, chap, ts) => ({ siteId: 'arena', slug: 'xyz', name: 'XYZ', progress: { chap, slug: `xyz-chapter-${chap}`, ts }, cLang: 'en', folder: 1, tags: [], ts, createTs: 1, id });
+  for (const mode of ['merge', 'replace']) {
+    const store = new Store(new MemoryArea());
+    await importInto(store, JSON.stringify({ version: 1, entries: [ent('LocalXyz01', 12, now - 1000)], imgs: {} }), 'replace', now - 1000);
+    const s = await importInto(store, JSON.stringify({ version: 1, entries: [ent('FileXyz002', 22, now - 500)], imgs: {} }), mode, now);
+    const lib = await store.loadLibrary();
+    assert.equal(lib.entries.size, 1, mode);
+    const [e] = lib.entries.values();
+    assert.equal(e.id, 'FileXyz002', mode); // smallest id survives, same on every device
+    assert.equal(e.progress.chap, 22, mode);
+    assert.equal(s.added.length, 0, mode);
+    assert.equal(s.updated.length, 1, mode);
+    assert.equal(s.removed.length, 0, mode);
+    assert.deepEqual(lib.order, ['FileXyz002'], mode);
+  }
+});

@@ -31,6 +31,7 @@
 // Shiori's storage and library.json only — never in a MangaPin export.
 
 import { withField } from './mangapin.js';
+import { slugKey } from './adapters.js';
 
 const GROUP = new Set(['progress', 'latest', 'next', 'ts']);
 const NEG = -Infinity;
@@ -188,6 +189,7 @@ export function mergeLibraries(base, other) {
     entries.set(id, m.entry);
     meta.set(id, m.meta);
   }
+  dedupeSeries(entries, meta, tombs);
   const [first, second] = num(other.layoutTs) > num(base.layoutTs) ? [other, base] : [base, other];
   const order = [];
   const placed = new Set();
@@ -200,6 +202,36 @@ export function mergeLibraries(base, other) {
     keepImgs: [...(first.keepImgs || [])],
     layoutTs: Math.max(num(base.layoutTs), num(other.layoutTs), 0),
   };
+}
+
+/** Same series on the same site, whatever its id (volatile slug parts ignored). */
+export const seriesKey = (e) => `${e.siteId}|${slugKey(e.siteId, e.slug)}`;
+
+/**
+ * Never keep two entries for one series (two devices pinned it, or an import brought it in
+ * under another id): the smallest id survives — every device picks the same one — the
+ * others are merged into it field by field and tombstoned. Mutates the maps.
+ */
+export function dedupeSeries(entries, meta, tombs) {
+  const groups = new Map();
+  for (const [id, e] of entries) {
+    const k = seriesKey(e);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(id);
+  }
+  for (const ids of groups.values()) {
+    if (ids.length < 2) continue;
+    ids.sort();
+    const keep = ids[0];
+    for (const id of ids.slice(1)) {
+      const dup = entries.get(id), dm = metaOf(dup, meta.get(id));
+      const m = mergeEntry(entries.get(keep), meta.get(keep), withField(dup, 'id', keep), dm);
+      entries.set(keep, m.entry); meta.set(keep, m.meta);
+      // newer than anything that copy has seen, so it stays deleted on every device
+      tombs.set(id, Math.max(num(tombs.get(id)), dm.u + 1));
+      entries.delete(id); meta.delete(id);
+    }
+  }
 }
 
 /** Order-independent fingerprint of a library's content (entries + meta + tombs + labels). */
