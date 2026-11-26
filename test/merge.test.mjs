@@ -164,6 +164,9 @@ test('deletes are final everywhere; only an explicit restore beats them', () => 
   const e = structuredClone(lib);
   e.meta.set(ID, { ...e.meta.get(ID), rs: 4000, u: 4000 });
   for (const r of [mergeLibraries(a, e), mergeLibraries(e, a)]) assert.equal(r.entries.has(ID), true);
+  // reading after the restore keeps it restored
+  const g = mergeLibraries(a, e); setProgress(g, ID, 41, { now: 4500 });
+  assert.equal(mergeLibraries(a, g).entries.get(ID).progress.chap, 41);
   // and deleting it again after the restore works
   const f = mergeLibraries(a, e); deleteEntry(f, ID, 5000);
   assert.equal(mergeLibraries(f, e).entries.has(ID), false);
@@ -288,4 +291,29 @@ test('series de-duplication through the server: commutative, convergent, and no 
     assert.equal(bySlug.size, server.entries.size, 'one entry per series');
     for (const [slug, c] of best) if (!deleted.has(slug)) assert.ok(bySlug.get(slug).progress.chap >= c, `read of ${slug} ch${c} lost (have ${bySlug.get(slug).progress.chap})`);
   }
+});
+
+test('offline edits of different fields on two devices both survive (folder here, tags there)', () => {
+  const lib = emptyLibrary(); addEntry(lib, baseEntry(1000));
+  const laptop = structuredClone(lib), desktop = structuredClone(lib);
+  editEntry(laptop, ID, { folder: 4 }, 2000);            // moved to Completed
+  editEntry(desktop, ID, { tags: [1, 7], score: 9 }, 3000); // later, other fields
+  for (const r of [mergeLibraries(laptop, desktop), mergeLibraries(desktop, laptop)]) {
+    const e = r.entries.get(ID);
+    assert.equal(e.folder, 4);
+    assert.deepEqual(e.tags, [1, 7]);
+    assert.equal(e.score, 9);
+  }
+  // the same field edited on both: the later edit wins
+  const a = structuredClone(lib), b = structuredClone(lib);
+  editEntry(a, ID, { folder: 2 }, 2000); editEntry(b, ID, { folder: 5 }, 2500);
+  assert.equal(mergeLibraries(a, b).entries.get(ID).folder, 5);
+  assert.equal(mergeLibraries(b, a).entries.get(ID).folder, 5);
+  // removing a field is an edit too, and so is adding one the other side never had
+  const c = structuredClone(lib), d = structuredClone(lib);
+  editEntry(c, ID, { score: 7 }, 2000); editEntry(d, ID, { name: 'New name' }, 2100);
+  const cd = mergeLibraries(c, d);
+  assert.equal(cd.entries.get(ID).score, 7); assert.equal(cd.entries.get(ID).name, 'New name');
+  editEntry(cd, ID, { score: undefined }, 2200);
+  assert.equal('score' in mergeLibraries(cd, c).entries.get(ID), false);
 });

@@ -15,10 +15,10 @@
 //              forward-only tracking it is almost always empty.
 //   latest   — max by (chap, ts)
 //   next     — max by (ts)
-//   rest     — every other field, taken whole from the side with the newer "rest time"
-//              (sidecar `r`, the last time a user edited those fields; defaults to entry.ts).
-//              Release checks and tracking bump entry.ts but not `r`, so they can't clobber
-//              a tag/folder edit made on another machine.
+//   rest     — every other field, one by one: the side with the newer edit time of that
+//              field wins (sidecar `f`, else `b`/`r`; defaults to entry.ts). Release checks and
+//              tracking bump entry.ts but not these, so they can't clobber a tag/folder edit
+//              made on another machine, and edits of different fields on two devices both stay.
 //   ts       — max
 // Every choice is a join in a semilattice (max over a total order, or set union + frontier),
 // which makes the merge commutative, associative and idempotent (property-tested).
@@ -26,7 +26,8 @@
 // Entries are never reshaped: the winner's object is copied with its own key order and only
 // the three group fields (+ts) are replaced in place (or inserted in MangaPin's field order).
 //
-// Sidecar meta per id: { r, pm?, u, pf?, rs? } — rest time, manual-correction time, last user
+// Sidecar meta per id: { r, b?, f?, pm?, u, pf?, rs? } — rest time (latest rest edit; b = time of
+// the rest fields without their own time in f, defaults to r), manual-correction time, last user
 // edit/read time (a delete's tombstone is set after it), extra frontier events, restore time
 // (the only thing that beats an older tombstone). It lives in
 // Shiori's storage and library.json only — never in a MangaPin export.
@@ -65,6 +66,10 @@ export function metaOf(entry, meta) {
   const out = { r, u };
   if (pm !== NEG) out.pm = pm;
   if (rs !== NEG) out.rs = rs;
+  if (typeof meta?.b === 'number' && meta.b !== r) out.b = meta.b;
+  const base = out.b ?? r; // a field time equal to the base says nothing: drop it, so equal states compare equal
+  const f = isObj(meta?.f) ? Object.entries(meta.f).filter(([k, t]) => typeof t === 'number' && t !== base && !GROUP.has(k)) : [];
+  if (f.length) out.f = Object.fromEntries(f.sort((x, y) => cmp(x[0], y[0])));
   if (pf.length) out.pf = pf;
   return out;
 }
@@ -82,6 +87,36 @@ function compareRest(a, ma, b, mb) {
 }
 
 function isObj(v) { return v && typeof v === 'object' && !Array.isArray(v); }
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+function withoutField(o, key) {
+  const out = {};
+  for (const k of Object.keys(o)) if (k !== key) Object.defineProperty(out, k, { value: o[k], enumerable: true, writable: true, configurable: true });
+  return out;
+}
+
+/** Edit time of one rest field: its own (meta.f), else the time of the fields without one. */
+export const fieldTime = (m, k) => (m.f && typeof m.f[k] === 'number' ? m.f[k] : m.b ?? m.r);
+
+/**
+ * Rest fields merge one by one: each is a last-writer-wins register (time, then presence,
+ * then value as tie-breaks), so an offline folder change on one device and a tag change on
+ * another both survive. Times are kept as base (b, for every field without its own) + f.
+ */
+function mergeRestFields(a, ma, b, mb) {
+  const keys = new Set();
+  for (const o of [a, b, ma.f || {}, mb.f || {}]) for (const k of Object.keys(o)) if (!GROUP.has(k)) keys.add(k);
+  const base = Math.max(ma.b ?? ma.r, mb.b ?? mb.r);
+  const pick = new Map(), f = {};
+  for (const k of [...keys].sort()) {
+    const ta = fieldTime(ma, k), tb = fieldTime(mb, k);
+    const c = cmp(ta, tb) || cmp(hasOwn(a, k) ? 1 : 0, hasOwn(b, k) ? 1 : 0)
+      || cmp(canonical(a[k]), canonical(b[k])) || cmp(JSON.stringify(a[k]) ?? '', JSON.stringify(b[k]) ?? '');
+    pick.set(k, c >= 0 ? 'a' : 'b');
+    const t = Math.max(ta, tb);
+    if (t !== base) f[k] = t;
+  }
+  return { pick, f, base };
+}
 
 // Comparators for group fields; `undefined` loses to anything present.
 function cmpEvent(x, y) {
@@ -128,6 +163,13 @@ export function mergeEntry(a, aMeta, b, bMeta) {
   const ma = metaOf(a, aMeta), mb = metaOf(b, bMeta);
   const aWins = compareRest(a, ma, b, mb) >= 0;
   let out = aWins ? a : b;
+  const rest = mergeRestFields(a, ma, b, mb);
+  for (const [k, side] of rest.pick) {
+    const src = side === 'a' ? a : b;
+    if (src === out) continue;
+    if (hasOwn(src, k)) { if (!hasOwn(out, k) || canonical(out[k]) !== canonical(src[k]) || JSON.stringify(out[k]) !== JSON.stringify(src[k])) out = withField(out, k, src[k]); }
+    else if (hasOwn(out, k)) out = withoutField(out, k);
+  }
 
   const { progress, pm, pf } = mergeProgress(a.progress, ma, b.progress, mb);
   const latest = cmpLatest(a.latest, b.latest) >= 0 ? a.latest : b.latest;
@@ -139,6 +181,8 @@ export function mergeEntry(a, aMeta, b, bMeta) {
   const ts = Math.max(num(a.ts), num(b.ts));
   if (ts !== NEG && out.ts !== ts) out = withField(out, 'ts', ts);
   const meta = { r: Math.max(ma.r, mb.r), u: Math.max(ma.u, mb.u) };
+  if (rest.base !== meta.r) meta.b = rest.base;
+  if (Object.keys(rest.f).length) meta.f = rest.f;
   if (pm !== NEG) meta.pm = pm;
   const rs = Math.max(ma.rs ?? NEG, mb.rs ?? NEG);
   if (rs !== NEG) meta.rs = rs;

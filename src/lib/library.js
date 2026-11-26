@@ -171,8 +171,10 @@ export function editEntry(lib, id, patch, now = Date.now()) {
   const e = lib.entries.get(id);
   if (!e) throw new Error('no such entry');
   let out = e;
+  const edited = [];
   for (const [k, v] of Object.entries(patch)) {
     if (k === 'progress' || k === 'latest' || k === 'next' || k === 'ts' || k === 'id' || k === 'createTs') continue;
+    edited.push(k);
     if (v === undefined) { if (Object.prototype.hasOwnProperty.call(out, k)) { out = { ...out }; delete out[k]; } }
     else out = withField(out, k, v);
   }
@@ -180,7 +182,11 @@ export function editEntry(lib, id, patch, now = Date.now()) {
   out = withField(out, 'ts', ts);
   lib.entries.set(id, out);
   const m = metaOf(e, lib.meta.get(id));
-  lib.meta.set(id, { ...m, r: ts, u: Math.max(m.u, ts) });
+  // only the edited fields get the new time; the rest keep theirs (b). r still moves, so a
+  // device on an older Shiori (which merges the whole group by r) also sees this as the newest edit
+  const f = { ...(m.f || {}) };
+  for (const k of edited) f[k] = ts;
+  lib.meta.set(id, metaOf(out, { ...m, r: ts, b: m.b ?? m.r, f, u: Math.max(m.u, ts) }));
   return out;
 }
 
@@ -228,7 +234,8 @@ export function setProgress(lib, id, chap, { manual = false, slug, now = Date.no
   const m = metaOf(e, lib.meta.get(id));
   // the new read is newer than every earlier event and (auto) further than all of them,
   // so it dominates the whole frontier
-  const meta = { r: m.r, u: Math.max(m.u, ts) };
+  const meta = { ...m, u: Math.max(m.u, ts) };
+  delete meta.pf; delete meta.pm;
   if (manual) meta.pm = ts;
   else if (m.pm !== undefined) meta.pm = m.pm;
   lib.meta.set(id, meta);

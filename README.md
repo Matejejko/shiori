@@ -73,7 +73,7 @@ associative and idempotent (property-tested), and every device converges.
 | `progress` | furthest chapter read **since the last manual correction** |
 | `latest` | max by (chap, ts) |
 | `next` | max by ts |
-| everything else | whole group from the side with the newer *rest time* |
+| everything else | field by field: the side that edited *that field* last wins |
 | `ts` | max |
 | tombstone | a delete is final on every device: later reads or edits elsewhere don't undo it; only a *replace* import that has the series restores it |
 
@@ -87,8 +87,8 @@ chapter 12 therefore gives one `xyz` at chapter 22 (and a correction made after 
 **Clocks.** Every decision above compares device timestamps. A device whose clock is more than 10 min off
 the server's (`Date` header) refuses to sync and says so, instead of silently winning or losing every conflict.
 
-**Known limits** (by design, not bugs): name/folder/tags/score/… are one group, so if two *offline* devices
-edit different fields of the same series, the later edit's whole group wins. Tombstones (deleted ids) are
+Offline edits of *different* fields on two devices (folder on one, tags on the other) both survive; the
+same field edited on both: the later edit wins. Tombstones (deleted ids) are
 kept forever, ~30 bytes each: without one, a device that still has the series would upload it again.
 
 Two deliberate deviations from "progress by newer progress.ts, rest by newer ts":
