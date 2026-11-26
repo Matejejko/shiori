@@ -251,3 +251,39 @@ test('a device whose clock is far off the server refuses to sync instead of winn
   await assert.rejects(syncOnce({ store: ahead, dav: dav() }), /clock is 180 min ahead/);
   await syncOnce({ store: good, dav: dav(), now: () => Date.now() - 3 * 3600e3 + 60e3 }); // a minute off is fine
 });
+
+test('server snapshots: one per day, the newest 14 are kept', async () => {
+  let clock = Date.UTC(2026, 0, 1, 12);
+  const now = () => clock;
+  const s = fakeDav({ clock: now });
+  const dav = new WebDav({ url: s.root, user: s.user, token: s.token, fetch: s.fetch });
+  const store = new Store(new MemoryArea());
+  await importInto(store, fixture, 'replace', clock);
+  await syncOnce({ store, dav, now });
+  for (let day = 0; day < 20; day++) {
+    clock += 86400e3;
+    const lib = await store.loadLibrary();
+    setProgress(lib, lib.order[0], 100 + day, { now: clock });
+    await store.saveLibrary(lib);
+    await syncOnce({ store, dav, now });
+  }
+  const names = [...s.files.keys()].filter((p) => p.includes('/backups/')).map((p) => p.split('/').pop()).sort();
+  assert.equal(names.length, 14);
+  assert.equal(names.at(-1), `library-${new Date(clock).toISOString().slice(0, 10)}.json`);
+});
+
+test('deleting a series drops its cover locally, unless another series uses it', async () => {
+  const store = new Store(new MemoryArea());
+  await importInto(store, fixture, 'replace', Date.now());
+  const lib = await store.loadLibrary();
+  const byImg = new Map();
+  for (const e of lib.entries.values()) if (typeof e.img === 'string') byImg.set(e.img, [...(byImg.get(e.img) || []), e.id]);
+  const keys = new Set(await store.coverKeys());
+  const [img, [id]] = [...byImg].find(([k, ids]) => ids.length === 1 && keys.has(k));
+  deleteEntry(lib, id);
+  await store.saveLibrary(lib);
+  const after = new Set(await store.coverKeys());
+  assert.equal(after.has(img), false);
+  assert.equal(after.size, keys.size - 1);
+  assert.equal(await store.getCover(img), undefined);
+});

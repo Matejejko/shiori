@@ -391,6 +391,8 @@ const handlers = {
       plan.summary.syncWarning = syncWarning;
       if (apply) {
         if (planId && planId !== plan.summary.planId) throw new Error('PLAN_CHANGED: your library changed since the dry run (a sync ran). Review the new summary.');
+        // the push after a replace overwrites the server's library: keep its current copy first
+        if (mode === 'replace') await store.setSyncState({ snapNext: true });
         await store.putCovers(plan.covers);
         await store.saveLibrary(plan.lib);
       }

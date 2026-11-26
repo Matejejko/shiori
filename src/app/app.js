@@ -364,7 +364,7 @@ async function dryRun() {
       h('dt', { text: 'New covers' }), h('dd', { text: String(s.newCovers) }),
       h('dt', { text: 'Covers missing everywhere' }), h('dd', { text: `${s.missingCovers.length} (kept as references)` }),
       s.unverifiedCovers.length ? [h('dt', { text: 'Covers not matching their key' }), h('dd', { class: 'err-text', text: `${s.unverifiedCovers.length} (kept for export, not synced)` })] : null,
-      h('dt', { text: 'File' }), h('dd', { text: s.kind === 'shiori' ? 'Shiori backup' : 'MangaPin export' }),
+      h('dt', { text: 'File' }), h('dd', { text: s.kind === 'shiori' ? 'Shiori backup' : s.kind === 'snapshot' ? 'Server snapshot (covers come from your server)' : 'MangaPin export' }),
       s.problemCount ? [h('dt', { text: 'Warnings' }), h('dd', { text: String(s.problemCount) })] : null,
     ),
     s.added.length ? h('details', {}, h('summary', { text: 'New entries' }), names(s.added)) : null,

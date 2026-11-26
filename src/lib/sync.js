@@ -12,7 +12,13 @@ const FORMAT = 'shiori-library';
 // Bump when library.json changes shape (and teach libFromDoc the old one). A device that meets a
 // newer version stops syncing instead of rewriting the file in a shape it doesn't understand.
 export const LIB_VERSION = 1;
-const pathsFor = (dir = REMOTE_DIR) => ({ DIR: dir, DOC: `${dir}/library.json`, COVERS: `${dir}/covers` });
+const pathsFor = (dir = REMOTE_DIR) => ({ DIR: dir, DOC: `${dir}/library.json`, COVERS: `${dir}/covers`, BACKUPS: `${dir}/backups` });
+// Server-side snapshots of library.json (the undo for a final delete or a wrong replace import):
+// the server's copy is saved before the first overwrite of each day and before the push that
+// follows a replace import; the newest KEEP_SNAPSHOTS stay. Covers on the server are never
+// deleted, so a snapshot + /covers is a complete restore (Import -> Replace with the snapshot).
+export const KEEP_SNAPSHOTS = 14;
+const SNAP_RE = /^library-[0-9T:-]+(-before-import)?\.json$/;
 
 const sortObj = (m) => Object.fromEntries([...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)));
 
@@ -82,7 +88,26 @@ const sameContent = (a, b) => libraryFingerprint(a) === libraryFingerprint(b)
  * @returns {Promise<{pushed:boolean, pulled:number, attempts:number, conflicts:number, coversUp:number, coversDown:number}>}
  */
 export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir = REMOTE_DIR }) {
-  const { DIR, DOC, COVERS } = pathsFor(dir);
+  const { DIR, DOC, COVERS, BACKUPS } = pathsFor(dir);
+
+  async function snapshot(text) {
+    const st = await store.getSyncState();
+    const iso = new Date(now()).toISOString();
+    const day = iso.slice(0, 10);
+    if (!st.snapNext && st.snapDay === day) return;
+    const name = st.snapNext ? `library-${iso.slice(0, 16).replace(':', '-')}-before-import.json` : `library-${day}.json`;
+    try {
+      await dav.mkcol(BACKUPS);
+      // another device may have taken today's snapshot already: that one is older, keep it
+      if (st.snapNext || !(await dav.head(`${BACKUPS}/${name}`))) await dav.put(`${BACKUPS}/${name}`, text, { contentType: 'application/json' });
+      const list = (await dav.propfind(BACKUPS + '/', 1)) || [];
+      const old = list.filter((x) => !x.self && !x.dir && SNAP_RE.test(x.name)).map((x) => x.name).sort().slice(0, -KEEP_SNAPSHOTS);
+      for (const n of old) await dav.delete(`${BACKUPS}/${n}`);
+      await store.setSyncState({ snapDay: day, snapNext: false });
+    } catch (err) {
+      log(`snapshot failed, sync continues: ${err.message}`); // a missing snapshot must never block sync
+    }
+  }
   const state = await store.getSyncState();
   const seqAtStart = state.seq || 0;
   const stats = { pushed: false, pulled: 0, attempts: 0, conflicts: 0, coversUp: 0, coversDown: 0 };
@@ -121,6 +146,7 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
     });
     if (!plan.needPush) { merged = plan.m; await store.setSyncState({ etag: remote.etag || null }); break; }
 
+    if (remote) await snapshot(remote.text);
     const body = toDoc(plan.m, now());
     const cond = remote ? (remote.etag ? { ifMatch: remote.etag } : {}) : { ifNoneMatch: '*' };
     let res;

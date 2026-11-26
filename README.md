@@ -30,7 +30,13 @@ can't be fetched, and such series are pinned without a cover.
 3. Sync runs 5 s after every change and every 15 min; the library lives in `/Shiori/`:
    - `library.json` — entries + tombstones + labels + merge metadata (`format: shiori-library`, `version`).
      A device that meets a newer `version` stops syncing and asks to be updated instead of rewriting it.
-   - `covers/<bytes>-<md5>.webp` — content-addressed covers, uploaded once
+   - `covers/<bytes>-<md5>.webp` — content-addressed covers, uploaded once, never deleted
+   - `backups/library-YYYY-MM-DD.json` — the server's `library.json` as it was before the first change of
+     each day, plus `library-…-before-import.json` before the push that follows a *replace* import; the
+     newest 14 are kept. **This is the undo** (deletes are final and spread everywhere): download one from
+     OpenCloud and Import → *Replace* with it. Its covers come from the server.
+
+   Each device drops covers that no series uses any more (deleted series); the server keeps them all.
 
 The token is stored only in `chrome.storage.local` (`secret`), never in synced data, never logged, only
 sent over https (plain http is refused except to `localhost`), and *Test connection* never sends the saved

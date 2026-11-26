@@ -99,6 +99,11 @@ export class Store {
     }
     await this.area.set(writes);
     if (removed.length) await this.area.remove(removed);
+    // covers no entry uses any more (deleted series) go too; the server keeps every cover, so
+    // snapshots stay restorable. (Callers store a new cover before the entry that uses it.)
+    const used = new Set([...lib.entries.values()].map((e) => e && e.img));
+    const unused = (await this.coverKeys()).filter((k) => !used.has(k));
+    if (unused.length) await this.removeCovers(unused);
     if (this.onChange) this.onChange(silent ? 'library-synced' : 'library');
     return n + removed.length;
   }

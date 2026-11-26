@@ -18,7 +18,7 @@ export function exportBackup(lib, coverData, now = Date.now()) {
   return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exported: now, library: docOf(lib, now), covers });
 }
 
-/** Import file (Shiori backup or MangaPin export) -> { kind, lib, covers: Map<key,b64>, problems }. */
+/** Import file (Shiori backup, server snapshot or MangaPin export) -> { kind, lib, covers: Map<key,b64>, problems }. */
 function readImportFile(text) {
   let d;
   try { d = JSON.parse(text); } catch (err) { throw new Error('not valid JSON: ' + err.message); }
@@ -27,6 +27,8 @@ function readImportFile(text) {
     const covers = new Map(Object.entries(d.covers && typeof d.covers === 'object' ? d.covers : {}).filter(([, v]) => typeof v === 'string'));
     return { kind: 'shiori', lib: libFromDoc(d.library, 'the library in this backup'), covers, problems: [] };
   }
+  // a library.json snapshot from the server's backups folder: its covers are on the server already
+  if (d && d.format === 'shiori-library') return { kind: 'snapshot', lib: libFromDoc(d, 'this snapshot'), covers: new Map(), problems: [] };
   const parsed = parseExport(text);
   // A MangaPin entry's rest fields carry MangaPin's ts; its progress is a plain read event.
   return { kind: 'mangapin', lib: libFromParsed(parsed, (obj) => ({ r: typeof obj.ts === 'number' ? obj.ts : 0 })), covers: parsed.imgs, problems: parsed.problems };
@@ -141,8 +143,9 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
     else summary.unchanged++;
   }
 
-  // covers referenced but present neither in the file nor locally (tolerated, preserved)
-  for (const e of lib.entries.values()) {
+  // covers referenced but present neither in the file nor locally (tolerated, preserved);
+  // a snapshot's covers come from the server with the next sync
+  for (const e of read.kind === 'snapshot' ? [] : lib.entries.values()) {
     if (typeof e.img === 'string' && e.img.startsWith('local:') && !fileCovers.has(e.img) && !localCovers.has(e.img)) {
       summary.missingCovers.push({ ...short(e), img: e.img });
     }

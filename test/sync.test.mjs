@@ -113,6 +113,43 @@ function scenarios(label, makeDav) {
     assert.equal(libraryFingerprint(fa), libraryFingerprint(fb));
   });
 
+  test(`[${label}] snapshots: the server copy is kept before the day's first overwrite and before a replace import's push`, async (t) => {
+    const sdir = dir + '-snap';
+    const dav = makeDav();
+    t.after(async () => { await dav.delete(sdir).catch(() => {}); });
+    const A = new Store(new MemoryArea());
+    const plan = planImport(await A.loadLibrary(), new Set(), fixture.text, 'replace');
+    await A.saveLibrary(plan.lib); await A.putCovers(plan.covers);
+    await syncOnce({ store: A, dav, dir: sdir }); // first write: nothing to keep yet
+    const snaps = async () => ((await dav.propfind(`${sdir}/backups/`, 1)) || []).filter((x) => !x.self && !x.dir).map((x) => x.name).sort();
+    assert.deepEqual(await snaps(), []);
+    const edit = async (chap) => { const lib = await A.loadLibrary(); setProgress(lib, lib.order[0], chap); await A.saveLibrary(lib); };
+
+    const before1 = (await dav.getText(`${sdir}/library.json`)).text;
+    await edit(500); await syncOnce({ store: A, dav, dir: sdir });
+    const day = new Date().toISOString().slice(0, 10);
+    assert.deepEqual(await snaps(), [`library-${day}.json`]);
+    assert.equal((await dav.getText(`${sdir}/backups/library-${day}.json`)).text, before1);
+
+    await edit(501); await syncOnce({ store: A, dav, dir: sdir });
+    assert.equal((await snaps()).length, 1, 'one daily snapshot');
+
+    const before2 = (await dav.getText(`${sdir}/library.json`)).text;
+    await A.setSyncState({ snapNext: true }); // what applying a replace import does
+    await edit(502); await syncOnce({ store: A, dav, dir: sdir });
+    const pre = (await snaps()).find((n) => n.endsWith('-before-import.json'));
+    assert.ok(pre, 'pre-import snapshot');
+    const snapText = (await dav.getText(`${sdir}/backups/${pre}`)).text;
+    assert.equal(snapText, before2);
+
+    // restoring it: Import -> Replace with the snapshot file
+    const B = new Store(new MemoryArea());
+    const restore = planImport(await B.loadLibrary(), new Set(), snapText, 'replace');
+    assert.equal(restore.summary.kind, 'snapshot');
+    assert.equal(restore.lib.entries.get(plan.lib.order[0]).progress.chap, 501);
+    assert.equal(restore.lib.entries.size, fromDoc(snapText).entries.size);
+  });
+
   test(`[${label}] refuses to overwrite a non-Shiori library.json`, async (t) => {
     const d3 = dir + '-foreign';
     const dav = makeDav();
