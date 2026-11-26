@@ -1,4 +1,4 @@
-// Deterministic merge of MangaPin entries and Shiori libraries.
+// Deterministic merge of entries and libraries (entries keep MangaPin's field names).
 //
 // Field groups of an entry:
 //   progress — "furthest chapter read since your last manual correction".
@@ -30,7 +30,7 @@
 // the rest fields without their own time in f, defaults to r), manual-correction time, last user
 // edit/read time (a delete's tombstone is set after it), extra frontier events, restore time
 // (the only thing that beats an older tombstone). It lives in
-// Shiori's storage and library.json only — never in a MangaPin export.
+// Shiori's storage and library.json, next to the entries (never inside them).
 
 import { withField } from './mangapin.js';
 import { slugKey } from './adapters.js';
@@ -218,7 +218,7 @@ export function mergeLabels(a = emptyLabels(), b = emptyLabels()) {
 
 /**
  * Merge two libraries. Content (entries, meta, tombstones, labels) merges symmetrically.
- * Layout (order, MangaPin top-level keys, orphan covers) is last-writer-wins by layoutTs,
+ * Layout (order) is last-writer-wins by layoutTs,
  * which only imports set; on a tie `base` wins (sync passes the server as base, so every
  * device converges on the server's order). Ids missing from the winning order are appended
  * in the other side's order.
@@ -250,8 +250,6 @@ export function mergeLibraries(base, other) {
   }
   return {
     order, entries, meta, tombs, labels: mergeLabels(base.labels, other.labels),
-    top: first.top || second.top || null,
-    keepImgs: [...(first.keepImgs || [])],
     layoutTs: Math.max(num(base.layoutTs), num(other.layoutTs), 0),
   };
 }

@@ -65,8 +65,8 @@
 
     <section id="tab-io" class="pane" hidden>
       <div class="card stack">
-        <h2>Import a MangaPin export</h2>
-        <p class="muted small">Pick a <code>MangaPin*.json</code>. You get a dry-run summary first; nothing changes until you confirm.</p>
+        <h2>Import</h2>
+        <p class="muted small">Pick a Shiori backup (<code>Shiori-*.json</code>) or a MangaPin export (<code>MangaPin*.json</code>). You get a dry-run summary first; nothing changes until you confirm.</p>
         <input id="file" type="file" accept=".json,application/json">
         <div class="row tight">
           <label class="check"><input type="radio" name="mode" value="merge" checked> Merge into my library</label>
@@ -76,8 +76,8 @@
       </div>
       <div class="card stack">
         <h2>Export</h2>
-        <p class="muted small">Writes <code>Shiori-YYYYMMDDHHmm.json</code> in MangaPin’s format (entries + covers), so MangaPin can import it.</p>
-        <div><button id="export" type="button">Export MangaPin JSON</button> <span id="exportMsg" class="muted small"></span></div>
+        <p class="muted small">Writes <code>Shiori-YYYYMMDDHHmm.json</code>: a Shiori backup of your whole library with covers. Import it here on any device.</p>
+        <div><button id="export" type="button">Export backup</button> <span id="exportMsg" class="muted small"></span></div>
       </div>
     </section>
 

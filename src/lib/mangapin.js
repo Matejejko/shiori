@@ -94,9 +94,7 @@ export function validateEntry(e) {
 
 /**
  * Parse a MangaPin export. Returns
- * { version, entries: [{id, raw, obj}], imgs: Map<key,b64>, top: {order:[keys], raw:{key:rawJSON}},
- *   problems: [...], canonical: bool }
- * `canonical` = the file is exactly what JSON.stringify produces (so a re-export is byte-identical).
+ * { version, entries: [{id, raw, obj}], imgs: Map<key,b64>, problems: [...], duplicateIds, droppedEntries }
  */
 export function parseExport(text) {
   let data;
@@ -108,9 +106,6 @@ export function parseExport(text) {
   }
   const problems = [];
   if (data.version !== 1) problems.push(`unexpected version ${JSON.stringify(data.version)} (expected 1)`);
-
-  const top = { order: Object.keys(data), raw: {} };
-  for (const k of top.order) if (k !== 'entries' && k !== 'imgs') top.raw[k] = JSON.stringify(data[k]);
 
   const entries = [];
   const seen = new Set();
@@ -130,7 +125,7 @@ export function parseExport(text) {
     if (!parseCoverKey(k)) problems.push(`imgs key ${k} is not local:<bytes>:<md5>.webp`);
     imgs.set(k, v);
   }
-  return { version: data.version, entries, imgs, top, problems, canonical: JSON.stringify(data) === text, duplicateIds, droppedEntries };
+  return { version: data.version, entries, imgs, problems, duplicateIds, droppedEntries };
 }
 
 /** Image keys referenced by entries, in first-reference order. */
@@ -144,38 +139,3 @@ export function referencedImgKeys(entryObjs) {
   return out;
 }
 
-/**
- * Serialize an export exactly like MangaPin's JSON.stringify would.
- * @param {object} p
- * @param {string[]} p.entriesRaw  raw JSON strings of entries, in export order
- * @param {string[]} p.imgKeys     image keys in output order
- * @param {(key:string)=>string|undefined} p.imgData  base64 lookup (missing keys are skipped)
- * @param {{order:string[], raw:Object<string,string>}} [p.top] top-level layout from the last import
- */
-export function serializeExport({ entriesRaw, imgKeys, imgData, top }) {
-  const order = top && top.order && top.order.length ? top.order : ['version', 'entries', 'imgs'];
-  const raw = (top && top.raw) || {};
-  const parts = [];
-  const emitted = new Set();
-  const emit = (k) => {
-    if (emitted.has(k)) return;
-    emitted.add(k);
-    if (k === 'entries') parts.push('"entries":[' + entriesRaw.join(',') + ']');
-    else if (k === 'imgs') {
-      const kv = [];
-      for (const key of imgKeys) {
-        const v = imgData(key);
-        if (typeof v === 'string') kv.push(JSON.stringify(key) + ':' + JSON.stringify(v));
-      }
-      parts.push('"imgs":{' + kv.join(',') + '}');
-    } else if (k === 'version') parts.push('"version":' + (raw.version ?? '1'));
-    else if (raw[k] !== undefined) parts.push(JSON.stringify(k) + ':' + raw[k]);
-  };
-  for (const k of order) emit(k);
-  // Keys the original file lacked are only added when needed, so a file without them
-  // still round-trips byte-identically.
-  if (!top) emit('version');
-  emit('entries');
-  if (!emitted.has('imgs') && imgKeys.some((k) => typeof imgData(k) === 'string')) emit('imgs');
-  return '{' + parts.join(',') + '}';
-}

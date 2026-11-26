@@ -3,11 +3,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { FIXTURES, exportFixtures } from './helpers.mjs';
+import { FIXTURES, exportFixtures, storeContent, mangapinContent } from './helpers.mjs';
 import { Store, MemoryArea } from '../src/lib/store.js';
 import { WebDav } from '../src/lib/webdav.js';
 import { syncOnce } from '../src/lib/sync.js';
-import { planImport, exportString, setProgress, deleteEntry, emptyLibrary, addEntry, formPatch } from '../src/lib/library.js';
+import { planImport, setProgress, deleteEntry, emptyLibrary, addEntry, formPatch } from '../src/lib/library.js';
 import { locate } from '../src/lib/tracker.js';
 import { isBlockedPage } from '../src/lib/releases.js';
 import { matchUrl } from '../src/lib/adapters.js';
@@ -20,11 +20,6 @@ async function importInto(store, text, mode, now) {
   await store.putCovers(plan.covers);
   await store.saveLibrary(plan.lib);
   return plan.summary;
-}
-async function exportOf(store) {
-  const lib = await store.loadLibrary();
-  const covers = await store.getCovers(await store.coverKeys());
-  return exportString(lib, (k) => covers.get(k));
 }
 
 test('a second device replace-importing an old export does not revert reading done elsewhere', async () => {
@@ -81,11 +76,11 @@ test('replace with a reordered export (and fewer covers) survives sync byte-iden
   d.imgs = imgs;
   const text = JSON.stringify(d);
   await importInto(a, text, 'replace', 2000);
-  assert.equal(await exportOf(a), text);
+  assert.equal(await storeContent(a), mangapinContent(text));
   await syncOnce({ store: a, dav: dav() });
   await syncOnce({ store: b, dav: dav() });
-  assert.equal(await exportOf(a), text);
-  assert.equal(await exportOf(b), text);
+  assert.equal(await storeContent(a), mangapinContent(text));
+  assert.equal(await storeContent(b), mangapinContent(text));
   assert.ok(orphan); // (the first cover is still referenced; nothing resurrects)
 });
 
@@ -141,12 +136,6 @@ test('thunderscans: a dash-less chapter path resolves against the pinned series'
   assert.equal(matchUrl('https://en-thunderscans.com/0086250808-kaiju-no-8-12/').chap, 12); // integer-only alone
 });
 
-test('dry run: "byte-identical" is not claimed for files with duplicate ids', () => {
-  const d = JSON.parse(fixture);
-  d.entries.push({ ...d.entries[0] });
-  assert.equal(planImport(emptyLibrary(), new Set(), JSON.stringify(d), 'replace').summary.exact, false);
-  assert.equal(planImport(emptyLibrary(), new Set(), fixture, 'replace').summary.exact, true);
-});
 
 test('a real page with Cloudflare\'s normal script is not mistaken for a challenge', () => {
   assert.equal(isBlockedPage(readFileSync(join(FIXTURES, 'sites/comix-chapter.html'), 'utf8')), false);

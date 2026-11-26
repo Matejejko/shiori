@@ -5,7 +5,7 @@ import { Store } from './lib/store.js';
 import { WebDav } from './lib/webdav.js';
 import { tagIdsFromNames } from './lib/labels.js';
 import { syncOnce } from './lib/sync.js';
-import { planImport, exportString, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread } from './lib/library.js';
+import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
 import { locate, trackVisit, seriesOf, seenKey, seenFor, noteSeen } from './lib/tracker.js';
@@ -400,7 +400,7 @@ const handlers = {
   async exportFile() {
     const lib = await store.loadLibrary();
     const covers = await store.getCovers(await store.coverKeys());
-    return { name: exportFileName(), text: exportString(lib, (k) => covers.get(k)) };
+    return { name: exportFileName(), text: exportBackup(lib, (k) => covers.get(k)) };
   },
   async saveSettings({ cfg, token }) {
     const next = await store.setConfig(cfg || {});

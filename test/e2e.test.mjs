@@ -8,7 +8,7 @@ import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { exportFixtures, davEnv, loadPlaywright } from './helpers.mjs';
+import { exportFixtures, davEnv, loadPlaywright, backupContent, mangapinContent } from './helpers.mjs';
 import { WebDav } from '../src/lib/webdav.js';
 import { fromDoc } from '../src/lib/sync.js';
 import { parseExport } from '../src/lib/mangapin.js';
@@ -105,13 +105,13 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.click('#folderTabs button[data-folder=""]');
   });
 
-  await t.test('export through the UI is byte-identical to the imported file', async () => {
+  await t.test('export through the UI is a Shiori backup holding every imported entry and cover', async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=io]');
     const [dl] = await Promise.all([app.waitForEvent('download'), app.click('#export')]);
     assert.match(dl.suggestedFilename(), /^Shiori-\d{12}\.json$/);
     const text = readFileSync(await dl.path(), 'utf8');
-    assert.equal(text.length, fixture.text.length);
-    assert.ok(text === fixture.text, 'exported file differs from the import');
+    assert.equal(JSON.parse(text).format, 'shiori-backup');
+    assert.ok(backupContent(text) === mangapinContent(fixture.text), 'backup differs from the imported entries/covers');
   });
 
   await t.test('pin from the popup, then reading a chapter advances progress', async (t) => {

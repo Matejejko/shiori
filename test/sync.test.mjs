@@ -6,10 +6,10 @@ import assert from 'node:assert/strict';
 import { Store, MemoryArea } from '../src/lib/store.js';
 import { WebDav } from '../src/lib/webdav.js';
 import { syncOnce, fromDoc } from '../src/lib/sync.js';
-import { planImport, exportString, editEntry, setProgress, deleteEntry } from '../src/lib/library.js';
+import { planImport, editEntry, setProgress, deleteEntry } from '../src/lib/library.js';
 import { libraryFingerprint } from '../src/lib/merge.js';
 import { fakeDav } from './fakedav.mjs';
-import { exportFixtures, davEnv } from './helpers.mjs';
+import { exportFixtures, davEnv, storeContent, mangapinContent } from './helpers.mjs';
 
 
 /** Wrap a WebDav so a callback runs right before the next PUT of library.json. */
@@ -24,11 +24,6 @@ function withHook(dav) {
   return dav;
 }
 
-async function exportOf(store) {
-  const lib = await store.loadLibrary();
-  const covers = await store.getCovers(await store.coverKeys());
-  return exportString(lib, (k) => covers.get(k));
-}
 
 function scenarios(label, makeDav) {
   const fixture = exportFixtures()[0];
@@ -49,11 +44,11 @@ function scenarios(label, makeDav) {
     assert.equal(s1.pushed, true);
     assert.equal(s1.coversUp, plan.covers.size);
 
-    // desktop starts empty and pulls everything, covers included; its export is byte-identical
+    // desktop starts empty and pulls everything, covers included: every entry byte for byte
     const s2 = await syncOnce({ store: B, dav: davB, dir, log });
     assert.equal(s2.pushed, false);
     assert.equal(s2.coversDown, plan.covers.size);
-    assert.equal(await exportOf(B), fixture.text);
+    assert.equal(await storeContent(B), mangapinContent(fixture.text));
 
     // nothing to do on either side now
     const idle = await syncOnce({ store: A, dav: davA, dir, log });
@@ -89,7 +84,7 @@ function scenarios(label, makeDav) {
       assert.equal(lib.entries.has(y), false);
       assert.ok(lib.tombs.has(y));
     }
-    assert.equal(await exportOf(A), await exportOf(B));
+    assert.equal(await storeContent(A), await storeContent(B));
 
     // the server copy is a Shiori doc with the same content
     const remote = fromDoc((await davA.getText(`${dir}/library.json`)).text);

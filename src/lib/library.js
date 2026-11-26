@@ -1,13 +1,38 @@
-// Pure library operations: import planning (dry run + apply), export, local edits.
+// Pure library operations: import planning (dry run + apply), backup export, local edits.
 
-import { parseExport, serializeExport, referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
+import { parseExport, referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
 import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels, seriesKey } from './merge.js';
+import { docOf, libFromDoc } from './sync.js';
 
 export function emptyLibrary() {
-  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), top: null, keepImgs: [], layoutTs: 0 };
+  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), layoutTs: 0 };
 }
 
-/** Library built from a parsed export (duplicate ids inside the file are merged). */
+const BACKUP_FORMAT = 'shiori-backup';
+const BACKUP_VERSION = 1;
+
+/** Shiori backup: the library exactly as it syncs (incl. edit times and deletes) + its covers. */
+export function exportBackup(lib, coverData, now = Date.now()) {
+  const covers = {};
+  for (const k of referencedImgKeys([...lib.entries.values()])) { const v = coverData(k); if (typeof v === 'string') covers[k] = v; }
+  return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, exported: now, library: docOf(lib, now), covers });
+}
+
+/** Import file (Shiori backup or MangaPin export) -> { kind, lib, covers: Map<key,b64>, problems }. */
+function readImportFile(text) {
+  let d;
+  try { d = JSON.parse(text); } catch (err) { throw new Error('not valid JSON: ' + err.message); }
+  if (d && d.format === BACKUP_FORMAT) {
+    if (!(typeof d.version === 'number' && d.version <= BACKUP_VERSION)) throw new Error(`this backup was made by a newer Shiori (format ${d.version}) — update Shiori first`);
+    const covers = new Map(Object.entries(d.covers && typeof d.covers === 'object' ? d.covers : {}).filter(([, v]) => typeof v === 'string'));
+    return { kind: 'shiori', lib: libFromDoc(d.library, 'the library in this backup'), covers, problems: [] };
+  }
+  const parsed = parseExport(text);
+  // A MangaPin entry's rest fields carry MangaPin's ts; its progress is a plain read event.
+  return { kind: 'mangapin', lib: libFromParsed(parsed, (obj) => ({ r: typeof obj.ts === 'number' ? obj.ts : 0 })), covers: parsed.imgs, problems: parsed.problems };
+}
+
+/** Library built from a parsed MangaPin export (duplicate ids inside the file are merged). */
 function libFromParsed(parsed, metaFor) {
   const lib = emptyLibrary();
   for (const { id, obj } of parsed.entries) {
@@ -20,9 +45,6 @@ function libFromParsed(parsed, metaFor) {
       lib.entries.set(id, obj); lib.meta.set(id, m); lib.order.push(id);
     }
   }
-  lib.top = parsed.top;
-  const referenced = new Set(referencedImgKeys([...lib.entries.values()]));
-  lib.keepImgs = [...parsed.imgs.keys()].filter((k) => !referenced.has(k));
   return lib;
 }
 
@@ -47,7 +69,8 @@ function planId(mode, summary) {
  *          becomes the library's. Per entry it still merges like sync, so it never rolls back
  *          reading or newer edits on another device. The background syncs first so that the
  *          plan sees series that so far only exist on other devices.
- * Both make this device's layout (order, top-level keys, orphan covers) authoritative.
+ * The file is a Shiori backup (its edit times and deletes merge in like another device's)
+ * or a MangaPin export.
  *
  * @param {object} local             current library
  * @param {Set<string>} localCovers  cover keys present locally
@@ -55,27 +78,26 @@ function planId(mode, summary) {
  * @param {'merge'|'replace'} mode
  */
 export function planImport(local, localCovers, text, mode, now = Date.now()) {
-  const parsed = parseExport(text);
+  const read = readImportFile(text);
+  const { lib: file, covers: fileCovers } = read;
   const summary = {
     mode,
-    fileEntries: parsed.entries.length,
-    fileCovers: parsed.imgs.size,
-    exact: false,
-    problems: parsed.problems.slice(0, 50),
-    problemCount: parsed.problems.length,
+    kind: read.kind,
+    fileEntries: file.entries.size,
+    fileCovers: fileCovers.size,
+    problems: read.problems.slice(0, 50),
+    problemCount: read.problems.length,
     added: [], updated: [], unchanged: 0, removed: [], skippedDeleted: [], restored: [],
     missingCovers: [], unverifiedCovers: [], newCovers: 0,
   };
 
   // Cover keys should be local:<bytes>:<md5>.webp of the data. Covers that do not verify are
   // still kept verbatim (the key derivation is MangaPin's, not ours) but are not synced.
-  for (const [k, v] of parsed.imgs) {
+  for (const [k, v] of fileCovers) {
     if (!localCovers.has(k)) summary.newCovers++;
     if (!verifyCover(k, v)) summary.unverifiedCovers.push(k);
   }
 
-  // A file entry's rest fields carry MangaPin's ts; its progress is a plain read event.
-  const file = libFromParsed(parsed, (obj) => ({ r: typeof obj.ts === 'number' ? obj.ts : 0 }));
   let lib;
   if (mode === 'replace') {
     // a series counts as "in the file" whatever id it has here (it is merged, not deleted)
@@ -100,13 +122,13 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
     // the file's order, with each series under the id that survived de-duplication
     const survivor = new Map([...merged.entries].map(([id, e]) => [seriesKey(e), id]));
     const order = [...new Set([...file.order.map((id) => survivor.get(seriesKey(file.entries.get(id)))), ...merged.order])].filter((id) => merged.entries.has(id));
-    lib = { ...merged, tombs, labels: local.labels || emptyLabels(), top: parsed.top, keepImgs: file.keepImgs, order, layoutTs: now };
+    lib = { ...merged, tombs, order, layoutTs: now };
   } else {
     const skip = new Set([...file.entries.keys()].filter((id) => local.tombs.has(id) && !local.entries.has(id)));
     for (const id of skip) { summary.skippedDeleted.push(short(file.entries.get(id))); file.entries.delete(id); file.meta.delete(id); }
     file.order = file.order.filter((id) => !skip.has(id));
     const merged = mergeLibraries({ ...local, layoutTs: now }, { ...file, layoutTs: 0 });
-    lib = { ...merged, top: local.top || parsed.top, keepImgs: [...new Set([...(local.keepImgs || []), ...file.keepImgs])], layoutTs: now };
+    lib = { ...merged, layoutTs: now };
   }
   // classify by series, so the same series under another id counts as updated, not added
   const localBySeries = new Map([...local.entries.values()].map((e) => [seriesKey(e), e]));
@@ -121,34 +143,14 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
 
   // covers referenced but present neither in the file nor locally (tolerated, preserved)
   for (const e of lib.entries.values()) {
-    if (typeof e.img === 'string' && e.img.startsWith('local:') && !parsed.imgs.has(e.img) && !localCovers.has(e.img)) {
+    if (typeof e.img === 'string' && e.img.startsWith('local:') && !fileCovers.has(e.img) && !localCovers.has(e.img)) {
       summary.missingCovers.push({ ...short(e), img: e.img });
     }
   }
-  // "re-export is byte-identical" only when the file is plain JSON.stringify output, every entry
-  // survived parsing (string ids, no duplicates) and, for replace, nothing else gets merged in
-  summary.exact = parsed.canonical && !parsed.duplicateIds && !parsed.droppedEntries
-    && (mode === 'replace' ? summary.updated.length === 0 : local.entries.size === 0);
   summary.planId = planId(mode, summary);
 
-  const covers = new Map([...parsed.imgs].filter(([k]) => !localCovers.has(k)));
+  const covers = new Map([...fileCovers].filter(([k]) => !localCovers.has(k)));
   return { summary, lib, covers };
-}
-
-/** Build the MangaPin export string. `coverData(key)` returns base64 or undefined. */
-export function exportString(lib, coverData) {
-  const entries = lib.order.filter((id) => lib.entries.has(id)).map((id) => lib.entries.get(id));
-  const imgKeys = referencedImgKeys(entries);
-  const seen = new Set(imgKeys);
-  for (const k of lib.keepImgs || []) if (!seen.has(k)) { seen.add(k); imgKeys.push(k); }
-  return serializeExport({ entriesRaw: entries.map((e) => JSON.stringify(e)), imgKeys, imgData: coverData, top: lib.top });
-}
-
-/** Cover keys an export / sync needs. */
-export function neededCoverKeys(lib) {
-  const keys = referencedImgKeys([...lib.entries.values()]);
-  for (const k of lib.keepImgs || []) if (!keys.includes(k)) keys.push(k);
-  return keys;
 }
 
 // ---- local edits ----------------------------------------------------------------------

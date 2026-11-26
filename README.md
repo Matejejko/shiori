@@ -1,9 +1,9 @@
 # Shiori
 
 Personal Manifest V3 manga tracker: pin series, follow your reading automatically, check for new
-chapters, and sync your library to your own OpenCloud over WebDAV. The library *is* a MangaPin
-library: you can import a MangaPin export, and export one back, at any time — unmodified data
-round-trips byte-for-byte.
+chapters, and sync your library to your own OpenCloud over WebDAV. The data format is Shiori's own
+(versioned); entries keep MangaPin's field names, so a MangaPin export imports without losing anything.
+Export writes a Shiori backup.
 
 Vanilla ES modules, no build step, no runtime dependencies. Chromium first; the manifest also
 loads in Firefox 128+.
@@ -28,7 +28,8 @@ can't be fetched, and such series are pinned without a cover.
    `https://oc.192.168.0.101.sslip.io/remote.php/webdav/` (also valid: `/dav/files/<user>/`),
    username, app token → *Test connection* → *Save*.
 3. Sync runs 5 s after every change and every 15 min; the library lives in `/Shiori/`:
-   - `library.json` — entries (verbatim MangaPin objects) + tombstones + labels + merge metadata
+   - `library.json` — entries + tombstones + labels + merge metadata (`format: shiori-library`, `version`).
+     A device that meets a newer `version` stops syncing and asks to be updated instead of rewriting it.
    - `covers/<bytes>-<md5>.webp` — content-addressed covers, uploaded once
 
 The token is stored only in `chrome.storage.local` (`secret`), never in synced data, never logged, only
@@ -56,12 +57,14 @@ resolve even on your LAN.
 ## How data is kept
 
 - Entries are stored as raw JSON strings (`e:<id>`). `chrome.storage.local` returns objects with
-  **alphabetically sorted keys**, so storing objects would silently break byte-identical export.
-- Unknown fields (entry or top-level) survive import → edit → sync → export.
-- `imgs` are written in first-reference order; covers referenced but missing from `imgs`
-  (MangaPin loses some) are kept as references and reported in the import dry run.
+  **alphabetically sorted keys**; strings keep each entry exactly as imported.
+- Unknown entry fields survive import → edit → sync → backup.
+- Covers referenced by a MangaPin entry but missing from its `imgs` (MangaPin loses some) are kept as
+  references and reported in the import dry run. Covers no entry references are not imported.
 - `folder`, `type` and `tags` stay raw numbers; Library → Labels gives them names (synced).
-- Export filename: `Shiori-YYYYMMDDHHmm.json` (local time); the content is MangaPin's format.
+- Export: `Shiori-YYYYMMDDHHmm.json` (local time), a Shiori backup: `{format: "shiori-backup", version,
+  library: <same as library.json>, covers: {key: base64}}`. Importing it merges like another device that
+  synced (edit times and deletes included), or replaces as below. MangaPin can't read it.
 
 ## How merging works (and where it deviates from the original plan)
 
@@ -104,7 +107,7 @@ Two deliberate deviations from "progress by newer progress.ts, rest by newer ts"
 2. **Rest time ≠ entry.ts.** Release checks and tracking must bump `entry.ts` (MangaPin's invariant
    `ts ≥ nested ts`). With "rest by newer ts", a release check on the desktop would silently overwrite a
    folder/tag edit made on the offline laptop. Shiori keeps the time of the last *user edit* of the rest
-   fields in a sidecar (`meta.r`), only in its own storage and `library.json` — never in MangaPin exports.
+   fields in a sidecar (`meta`), next to the entries in its own storage and `library.json`.
 
 Import modes (both show a dry-run summary first; applying re-checks it and asks again if a sync changed
 the library meanwhile):
@@ -117,7 +120,7 @@ the library meanwhile):
   series that so far only exist on another device are included. Per entry it still merges like sync: it never
   rolls back reading or newer edits.
 
-Covers whose bytes don't match their `local:<bytes>:<md5>.webp` key are kept for export but not synced
+Covers whose bytes don't match their `local:<bytes>:<md5>.webp` key are kept locally but not synced
 (the dry run counts them). If your real export shows many of those, MangaPin derives the key differently
 than assumed here — tell me.
 
@@ -156,8 +159,8 @@ node --test
 ```
 
 - **Your real export is not in this repo** (personal data). Put it at `test/fixtures/private/MangaPin*.json`
-  (gitignored) or set `SHIORI_EXPORT=/path/to/export.json`; every fixture-driven test (byte-identical
-  round trip, MD5 of every cover key, adapter round trip of every entry, headless import) then runs on
+  (gitignored) or set `SHIORI_EXPORT=/path/to/export.json`; every fixture-driven test (import keeps every entry byte for byte, backup
+  restore, MD5 of every cover key, adapter round trip of every entry, headless import) then runs on
   it too. Until then they run on `test/fixtures/synthetic-export.json` (same shape: 103 entries, 91 covers,
   8 dangling cover references; regenerate with `node tools/make-fixture.mjs`).
 - **OpenCloud integration** (two devices, interleaved edits, real 412s): `test/opencloud/start.sh`

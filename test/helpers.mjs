@@ -69,3 +69,23 @@ export async function loadPlaywright() {
     return createRequire(join(root, 'noop.js'))('playwright');
   } catch { return null; }
 }
+
+// ---- comparing libraries with the files they came from ---------------------------------
+// What a library keeps of a MangaPin file: its entries in order + the covers they reference.
+const sortKeys = (o) => Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
+export function mangapinContent(text) {
+  const d = JSON.parse(text);
+  const imgs = {};
+  for (const e of d.entries) if (typeof e.img === 'string' && e.img in (d.imgs || {})) imgs[e.img] = d.imgs[e.img];
+  return JSON.stringify({ entries: d.entries, imgs: sortKeys(imgs) });
+}
+export function backupContent(text) {
+  const d = JSON.parse(text);
+  return JSON.stringify({ entries: d.library.entries, imgs: sortKeys(d.covers) });
+}
+export async function storeContent(store) {
+  const { exportBackup } = await import('../src/lib/library.js');
+  const lib = await store.loadLibrary();
+  const covers = await store.getCovers(await store.coverKeys());
+  return backupContent(exportBackup(lib, (k) => covers.get(k)));
+}

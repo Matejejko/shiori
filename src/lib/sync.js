@@ -2,40 +2,49 @@
 // Covers are content-addressed files /Shiori/covers/<bytes>-<md5>.webp, uploaded once.
 
 import { mergeLibraries, libraryFingerprint, metaOf, emptyLabels } from './merge.js';
-import { neededCoverKeys } from './library.js';
-import { coverKeyToFile, coverFileToKey, parseCoverKey, verifyCover } from './mangapin.js';
+import { coverKeyToFile, coverFileToKey, parseCoverKey, verifyCover, referencedImgKeys } from './mangapin.js';
 import { md5 } from './md5.js';
 import { b64ToBytes, bytesToB64 } from './base64.js';
 import { DavError } from './webdav.js';
 
 export const REMOTE_DIR = 'Shiori';
 const FORMAT = 'shiori-library';
+// Bump when library.json changes shape (and teach libFromDoc the old one). A device that meets a
+// newer version stops syncing instead of rewriting the file in a shape it doesn't understand.
+export const LIB_VERSION = 1;
 const pathsFor = (dir = REMOTE_DIR) => ({ DIR: dir, DOC: `${dir}/library.json`, COVERS: `${dir}/covers` });
 
 const sortObj = (m) => Object.fromEntries([...m].sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0)));
 
-/** Library -> library.json text. Entries stay verbatim (their own key order). */
-export function toDoc(lib, now = Date.now()) {
+/** Library -> library.json object. Entries stay verbatim (their own key order). */
+export function docOf(lib, now = Date.now()) {
   const order = lib.order.filter((id) => lib.entries.has(id));
-  return JSON.stringify({
+  return {
     format: FORMAT,
-    version: 1,
+    version: LIB_VERSION,
     updated: now,
     entries: order.map((id) => lib.entries.get(id)),
     meta: sortObj(new Map(order.map((id) => [id, metaOf(lib.entries.get(id), lib.meta.get(id))]))),
     tombs: sortObj(lib.tombs),
     labels: lib.labels || emptyLabels(),
-    top: lib.top || null,
-    keepImgs: lib.keepImgs || [],
     layoutTs: lib.layoutTs || 0,
-  });
+  };
 }
+export const toDoc = (lib, now) => JSON.stringify(docOf(lib, now));
 
 export function fromDoc(text) {
   let d;
   try { d = JSON.parse(text); } catch { throw new DavError('library.json on the server is not valid JSON — refusing to overwrite it', 0, 'format'); }
+  return libFromDoc(d, 'library.json on the server');
+}
+
+/** Parsed library.json (or the library inside a backup) -> library. */
+export function libFromDoc(d, what = 'library') {
   if (!d || d.format !== FORMAT || !Array.isArray(d.entries)) {
-    throw new DavError('library.json on the server is not a Shiori library — refusing to overwrite it', 0, 'format');
+    throw new DavError(`${what} is not a Shiori library — refusing to overwrite it`, 0, 'format');
+  }
+  if (!(typeof d.version === 'number' && d.version <= LIB_VERSION)) {
+    throw new DavError(`${what} was written by a newer Shiori (format ${d.version}). Update Shiori on this device; until then it does not sync, so it can't damage the newer data.`, 0, 'format');
   }
   const entries = new Map(), meta = new Map(), order = [];
   for (const e of d.entries) {
@@ -48,8 +57,6 @@ export function fromDoc(text) {
     order, entries, meta,
     tombs: new Map(Object.entries(d.tombs || {}).filter(([, t]) => typeof t === 'number')),
     labels: d.labels || emptyLabels(),
-    top: d.top || null,
-    keepImgs: Array.isArray(d.keepImgs) ? d.keepImgs : [],
     layoutTs: typeof d.layoutTs === 'number' ? d.layoutTs : 0,
   };
 }
@@ -67,8 +74,6 @@ function checkClock(remote, t) {
 
 const sameContent = (a, b) => libraryFingerprint(a) === libraryFingerprint(b)
   && JSON.stringify(a.order) === JSON.stringify(b.order)
-  && JSON.stringify(a.top || null) === JSON.stringify(b.top || null)
-  && JSON.stringify(a.keepImgs || []) === JSON.stringify(b.keepImgs || [])
   && (a.layoutTs || 0) === (b.layoutTs || 0);
 
 /**
@@ -144,7 +149,7 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
   const listing = await dav.propfind(COVERS + '/', 1);
   if (listing === null) { await store.setSyncState({ dirsOk: false }); throw new DavError('covers folder missing on server', 404); }
   const remoteFiles = new Set(listing.filter((x) => !x.self && !x.dir).map((x) => x.name));
-  const needed = neededCoverKeys(merged);
+  const needed = referencedImgKeys([...merged.entries.values()]);
   const localKeys = new Set(await store.coverKeys());
 
   for (const key of needed) {

@@ -144,7 +144,7 @@ function renderGrid() {
         err ? h('span', { class: 'small err-text chip', text: 'check failed', attrs: { title: err.error } }) : null,
       )));
   }
-  if (!list.length) grid.append(h('p', { class: 'muted empty', text: state.lib.entries.length ? 'No series match the filters.' : 'Library is empty — import a MangaPin export or pin a series from the popup.' }));
+  if (!list.length) grid.append(h('p', { class: 'muted empty', text: state.lib.entries.length ? 'No series match the filters.' : 'Library is empty — import a backup or MangaPin export, or pin a series from the popup.' }));
 }
 
 for (const id of ['q', 'fType', 'fTag', 'fSite', 'fUnread', 'sort']) $(id).addEventListener('input', renderGrid);
@@ -364,7 +364,7 @@ async function dryRun() {
       h('dt', { text: 'New covers' }), h('dd', { text: String(s.newCovers) }),
       h('dt', { text: 'Covers missing everywhere' }), h('dd', { text: `${s.missingCovers.length} (kept as references)` }),
       s.unverifiedCovers.length ? [h('dt', { text: 'Covers not matching their key' }), h('dd', { class: 'err-text', text: `${s.unverifiedCovers.length} (kept for export, not synced)` })] : null,
-      h('dt', { text: 'Re-export byte-identical to this file' }), h('dd', { text: s.exact ? 'yes' : 'no (other data is merged in, or the file has duplicates/odd entries)' }),
+      h('dt', { text: 'File' }), h('dd', { text: s.kind === 'shiori' ? 'Shiori backup' : 'MangaPin export' }),
       s.problemCount ? [h('dt', { text: 'Warnings' }), h('dd', { text: String(s.problemCount) })] : null,
     ),
     s.added.length ? h('details', {}, h('summary', { text: 'New entries' }), names(s.added)) : null,

@@ -3,7 +3,7 @@
   "name": "Shiori",
   "short_name": "Shiori",
   "version": "0.1.0",
-  "description": "Personal manga tracker: pins series, follows your reading, checks releases, syncs to your own WebDAV (OpenCloud). MangaPin import/export compatible.",
+  "description": "Personal manga tracker: pins series, follows your reading, checks releases, syncs to your own WebDAV (OpenCloud). Imports MangaPin exports.",
   "permissions": ["storage", "unlimitedStorage", "alarms", "tabs", "scripting"],
   "host_permissions": ["<all_urls>"],
   "background": {

@@ -3,7 +3,7 @@
 // Layout (all values JSON-safe; entries are stored as *strings* because
 // chrome.storage.local returns objects with alphabetically sorted keys):
 //   e:<id>      raw JSON string of the entry, verbatim
-//   lib         { order, meta:{id:{r,pm?,u,pf?}}, tombs:{id:ts}, labels, top, keepImgs, layoutTs }
+//   lib         { order, meta:{id:{r,b?,f?,pm?,u,pf?,rs?}}, tombs:{id:ts}, labels, layoutTs }
 //   c:<key>     base64 WebP for cover key "local:<bytes>:<md5>.webp"
 //   cidx        array of cover keys present locally
 //   cfg         settings (never contains the token)
@@ -13,7 +13,7 @@
 
 import { emptyLabels } from './merge.js';
 
-const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), top: null, keepImgs: [], layoutTs: 0 });
+const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), layoutTs: 0 });
 
 export const DEFAULT_CFG = {
   davUrl: '',          // full WebDAV root of the user's space, e.g. https://host/remote.php/webdav/
@@ -49,7 +49,7 @@ export class Store {
     return { ...EMPTY_INDEX(), ...(lib || {}) };
   }
 
-  /** Load the full library: { order, entries:Map<id,obj>, meta:Map, tombs:Map, labels, top, keepImgs } */
+  /** Load the full library: { order, entries:Map<id,obj>, meta:Map, tombs:Map, labels, layoutTs } */
   async loadLibrary() {
     const idx = await this.loadIndex();
     const keys = idx.order.map((id) => 'e:' + id);
@@ -68,8 +68,6 @@ export class Store {
       meta: new Map(Object.entries(idx.meta || {})),
       tombs: new Map(Object.entries(idx.tombs || {})),
       labels: idx.labels || emptyLabels(),
-      top: idx.top || null,
-      keepImgs: idx.keepImgs || [],
       layoutTs: idx.layoutTs || 0,
     };
   }
@@ -93,8 +91,6 @@ export class Store {
       meta: Object.fromEntries([...lib.meta].filter(([id]) => lib.entries.has(id))),
       tombs: Object.fromEntries(lib.tombs),
       labels: lib.labels || emptyLabels(),
-      top: lib.top || null,
-      keepImgs: lib.keepImgs || [],
       layoutTs: lib.layoutTs || 0,
     };
     if (!silent) {

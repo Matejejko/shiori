@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { exportFixtures, realExportPresent } from './helpers.mjs';
-import { parseExport, serializeExport, exportFileName, parseCoverKey, coverKeyFor, coverKeyToFile, coverFileToKey, withField } from '../src/lib/mangapin.js';
+import { exportFixtures, realExportPresent, storeContent, mangapinContent } from './helpers.mjs';
+import { parseExport, exportFileName, parseCoverKey, coverKeyFor, coverKeyToFile, coverFileToKey, withField } from '../src/lib/mangapin.js';
 import { b64ToBytes, bytesToB64 } from '../src/lib/base64.js';
 import { md5 } from '../src/lib/md5.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { Store, MemoryArea } from '../src/lib/store.js';
-import { planImport, exportString, emptyLibrary } from '../src/lib/library.js';
+import { planImport, exportBackup, emptyLibrary, setProgress } from '../src/lib/library.js';
+import { fromDoc } from '../src/lib/sync.js';
+import { metaOf, canonical } from '../src/lib/merge.js';
 
 test('real export present (informational)', (t) => {
   if (!realExportPresent()) t.diagnostic('No real MangaPin export found: only the synthetic fixture is tested. Put yours in test/fixtures/private/ or set SHIORI_EXPORT.');
@@ -49,22 +51,27 @@ test('withField keeps existing order and inserts new keys in MangaPin order', ()
   assert.deepEqual(Object.keys(withField(e, 'zzz', 1)), [...Object.keys(e), 'zzz']);
 });
 
-test('unknown top-level and entry fields survive, odd files still round-trip', () => {
-  const src = JSON.stringify({ version: 1, extra: { b: 1, a: [2] }, entries: [{ id: 'AAAAAAAAAA', siteId: 's', slug: 'x', name: '“q”   </script>', zz: { y: 1, x: 2 }, ts: 5 }], imgs: {}, tail: null });
-  const p = parseExport(src);
-  assert.equal(p.canonical, true);
-  const lib = emptyLibrary();
-  const plan = planImport(lib, new Set(), src, 'replace');
-  const out = exportString(plan.lib, (k) => p.imgs.get(k));
-  assert.equal(out, src);
+test('unknown entry fields survive import -> backup -> import, field order included', () => {
+  const src = JSON.stringify({ version: 1, entries: [{ id: 'AAAAAAAAAA', siteId: 's', slug: 'x', name: '“q”   </script>', zz: { y: 1, x: 2 }, ts: 5 }], imgs: {} });
+  const plan = planImport(emptyLibrary(), new Set(), src, 'replace');
+  const backup = exportBackup(plan.lib, () => undefined);
+  const again = planImport(emptyLibrary(), new Set(), backup, 'replace');
+  assert.equal(again.summary.kind, 'shiori');
+  assert.equal(JSON.stringify(again.lib.entries.get('AAAAAAAAAA')), JSON.stringify(JSON.parse(src).entries[0]));
+});
+
+test('a backup or library.json from a newer Shiori is refused, not misread', () => {
+  const b = JSON.parse(exportBackup(emptyLibrary(), () => undefined));
+  assert.throws(() => planImport(emptyLibrary(), new Set(), JSON.stringify({ ...b, version: 2 }), 'merge'), /newer Shiori/);
+  assert.throws(() => planImport(emptyLibrary(), new Set(), JSON.stringify({ ...b, library: { ...b.library, version: 2 } }), 'merge'), /newer Shiori/);
+  assert.throws(() => fromDoc(JSON.stringify({ ...b.library, version: 2 })), /newer Shiori/);
 });
 
 for (const fx of exportFixtures()) {
   test(`[${fx.name}] parses cleanly`, (t) => {
     const p = parseExport(fx.text);
-    t.diagnostic(`${p.entries.length} entries, ${p.imgs.size} covers, canonical=${p.canonical}, problems=${p.problems.length}`);
+    t.diagnostic(`${p.entries.length} entries, ${p.imgs.size} covers, problems=${p.problems.length}`);
     for (const pr of p.problems.slice(0, 20)) t.diagnostic('problem: ' + pr);
-    assert.equal(p.canonical, true, 'file is not plain JSON.stringify output — byte-identical export impossible');
     assert.ok(p.entries.length > 0);
   });
 
@@ -89,23 +96,32 @@ for (const fx of exportFixtures()) {
     for (const d of dangling) assert.equal(plan.lib.entries.get(d.id).img, d.obj.img);
   });
 
-  test(`[${fx.name}] imgs key order is first-reference order`, () => {
-    const data = JSON.parse(fx.text);
-    const order = [];
-    for (const e of data.entries) if (e.img in data.imgs && !order.includes(e.img)) order.push(e.img);
-    assert.deepEqual(Object.keys(data.imgs).slice(0, order.length), order);
-  });
-
-  test(`[${fx.name}] import -> chrome.storage-like store -> export is byte-identical`, async () => {
+  test(`[${fx.name}] import keeps every entry byte for byte and every referenced cover`, async () => {
     const store = new Store(new MemoryArea()); // MemoryArea sorts object keys like Chrome does
     const plan = planImport(await store.loadLibrary(), new Set(await store.coverKeys()), fx.text, 'replace');
     await store.saveLibrary(plan.lib);
     await store.putCovers(plan.covers);
-    const lib = await store.loadLibrary();
-    const covers = await store.getCovers(await store.coverKeys());
-    const out = exportString(lib, (k) => covers.get(k));
-    assert.equal(out.length, fx.text.length);
-    assert.ok(out === fx.text, 'export differs from the imported file');
+    assert.ok(await storeContent(store) === mangapinContent(fx.text));
+  });
+
+  test(`[${fx.name}] backup -> import on a fresh device restores the same library and covers`, async () => {
+    const a = new Store(new MemoryArea()), b = new Store(new MemoryArea());
+    const plan = planImport(emptyLibrary(), new Set(), fx.text, 'replace', 1000);
+    await a.saveLibrary(plan.lib); await a.putCovers(plan.covers);
+    const lib = await a.loadLibrary();
+    setProgress(lib, lib.order[0], 999, { now: 2000 }); // edit times and reading travel with it
+    await a.saveLibrary(lib);
+    const covers = await a.getCovers(await a.coverKeys());
+    const backup = exportBackup(await a.loadLibrary(), (k) => covers.get(k), 3000);
+    const restore = planImport(await b.loadLibrary(), new Set(), backup, 'replace', 4000);
+    await b.saveLibrary(restore.lib); await b.putCovers(restore.covers);
+    assert.equal(await storeContent(b), await storeContent(a));
+    const la = await a.loadLibrary(), lb = await b.loadLibrary();
+    for (const id of la.order) {
+      const { rs, u, ...rest } = metaOf(lb.entries.get(id), lb.meta.get(id)); // the restore marks every entry restored
+      const { rs: rsA, u: ua, ...restA } = metaOf(la.entries.get(id), la.meta.get(id));
+      assert.equal(canonical(rest), canonical(restA));
+    }
   });
 
   test(`[${fx.name}] merge-import of the same file into itself changes nothing`, async () => {
@@ -113,17 +129,12 @@ for (const fx of exportFixtures()) {
     const first = planImport(await store.loadLibrary(), new Set(), fx.text, 'replace');
     await store.saveLibrary(first.lib);
     await store.putCovers(first.covers);
-    const lib = await store.loadLibrary();
-    const again = planImport(lib, new Set(await store.coverKeys()), fx.text, 'merge');
+    const before = await storeContent(store);
+    const again = planImport(await store.loadLibrary(), new Set(await store.coverKeys()), fx.text, 'merge');
     assert.equal(again.summary.added.length, 0);
     assert.equal(again.summary.updated.length, 0);
     assert.equal(again.covers.size, 0);
-    const covers = await store.getCovers(await store.coverKeys());
-    assert.equal(exportString(again.lib, (k) => covers.get(k)), fx.text);
+    await store.saveLibrary(again.lib);
+    assert.equal(await storeContent(store), before);
   });
 }
-
-test('serializeExport without a template emits version/entries/imgs', () => {
-  const s = serializeExport({ entriesRaw: ['{"id":"a"}'], imgKeys: ['k', 'missing'], imgData: (k) => (k === 'k' ? 'QQ==' : undefined) });
-  assert.equal(s, '{"version":1,"entries":[{"id":"a"}],"imgs":{"k":"QQ=="}}');
-});
