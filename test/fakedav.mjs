@@ -5,7 +5,7 @@
 //  - PUT into a missing folder -> 409; MKCOL existing -> 405
 import { createHash } from 'node:crypto';
 
-export function fakeDav({ root = 'https://dav.test/remote.php/webdav/', user = 'u', token = 'a b c' } = {}) {
+export function fakeDav({ root = 'https://dav.test/remote.php/webdav/', user = 'u', token = 'a b c', clock = Date.now } = {}) {
   const files = new Map(); // path -> {body: Uint8Array, etag}
   const dirs = new Set(['']);
   let n = 0;
@@ -25,7 +25,7 @@ export function fakeDav({ root = 'https://dav.test/remote.php/webdav/', user = '
     switch (method) {
       case 'GET':
         if (!f) return new Response('', { status: 404 });
-        return new Response(f.body, { status: 200, headers: { etag: f.etag } });
+        return new Response(f.body, { status: 200, headers: { etag: f.etag, date: new Date(clock()).toUTCString() } });
       case 'HEAD':
         if (!f) return new Response(null, { status: 404 });
         return new Response(null, { status: 200, headers: { etag: f.etag, 'content-length': String(f.body.length) } });

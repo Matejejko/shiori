@@ -251,3 +251,14 @@ test('importing a series you already have under another id replaces it, never du
     assert.deepEqual(lib.order, ['FileXyz002'], mode);
   }
 });
+
+test('a device whose clock is far off the server refuses to sync instead of winning every conflict', async () => {
+  const s = fakeDav({ clock: () => Date.now() - 3 * 3600e3 }); // server says it is 3 h earlier
+  const dav = () => new WebDav({ url: s.root, user: s.user, token: s.token, fetch: s.fetch });
+  const good = new Store(new MemoryArea());
+  await importInto(good, fixture, 'replace', Date.now() - 4 * 3600e3);
+  await syncOnce({ store: good, dav: dav(), now: () => Date.now() - 3 * 3600e3 }); // first write: no clock to compare yet
+  const ahead = new Store(new MemoryArea());
+  await assert.rejects(syncOnce({ store: ahead, dav: dav() }), /clock is 180 min ahead/);
+  await syncOnce({ store: good, dav: dav(), now: () => Date.now() - 3 * 3600e3 + 60e3 }); // a minute off is fine
+});

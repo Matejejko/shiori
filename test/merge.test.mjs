@@ -224,3 +224,58 @@ test('same series under different ids (pinned on two devices, or imported) conve
     assert.equal([...server.entries.keys()][0], 'Bbbbbbbbb2'); // smallest id survives, everywhere
   }
 });
+
+test('reading on an offline device survives the duplicate it was made on being folded away', () => {
+  // A pinned the series as K, B as D; C has an old copy of D and reads chapter 30 offline.
+  const S = (id, ts) => ({ ...baseEntry(ts), id, slug: 'one-series' });
+  const A = emptyLibrary(); addEntry(A, S('Kkkkkkkkk1', 50));
+  const B = emptyLibrary(); addEntry(B, S('Zzzzzzzzz3', 60));
+  const C = structuredClone(B);
+  setProgress(C, 'Zzzzzzzzz3', 30, { now: 90 });
+  editEntry(B, 'Zzzzzzzzz3', { folder: 2 }, 100); // newer than C's read
+  for (const server of [mergeLibraries(mergeLibraries(A, B), C), mergeLibraries(A, mergeLibraries(B, C)), mergeLibraries(mergeLibraries(C, A), B)]) {
+    assert.equal(server.entries.size, 1);
+    const e = server.entries.get('Kkkkkkkkk1');
+    assert.equal(e.progress.chap, 30);
+    assert.equal(e.folder, 2);
+  }
+});
+
+test('series de-duplication through the server: commutative, convergent, and no read is ever lost', () => {
+  const ids = ['Aaaaaaaaa1', 'Bbbbbbbbb2', 'Ccccccccc3', 'Ddddddddd4', 'Eeeeeeeee5'];
+  const slugs = ['sone', 'stwo']; // 5 ids over 2 series: lots of duplicates
+  for (let round = 0; round < 300; round++) {
+    const devices = [emptyLibrary(), emptyLibrary(), emptyLibrary()];
+    const best = new Map(); // series -> highest chapter read anywhere
+    const deleted = new Set();
+    let now = 10_000;
+    for (const id of ids) {
+      const e = { ...baseEntry(now), id, slug: R.pick(slugs) };
+      for (const d of devices) if (R.bool(0.4)) addEntry(d, structuredClone(e));
+    }
+    let server = emptyLibrary();
+    for (let step = 0; step < 40; step++) {
+      now += R.int(0, 3) * 10;
+      const i = R.int(0, 2), d = devices[i];
+      if (R.bool(0.3)) { server = mergeLibraries(server, d); devices[i] = structuredClone(server); continue; }
+      const id = R.pick([...d.entries.keys()]);
+      if (!id) continue;
+      const e = d.entries.get(id);
+      if (R.bool(0.08)) { deleteEntry(d, id, now); deleted.add(e.slug); continue; }
+      if (R.bool(0.5)) editEntry(d, id, { folder: R.pick([1, 2, 4]) }, now);
+      else { const c = (e.progress?.chap ?? 0) + R.int(1, 3); setProgress(d, id, c, { now }); best.set(e.slug, Math.max(best.get(e.slug) ?? 0, c)); }
+    }
+    const [x, y, z] = devices;
+    // Not asserted: associativity over arbitrary device states. A copy deleted by a fold
+    // tombstone is merged into its survivor only if the two meet in the same merge, which
+    // through the server (it always holds the survivor) they do; two devices merging each
+    // other directly could drop such a copy's off-frontier read history (never its chapter).
+    void z;
+    assert.equal(libraryFingerprint(mergeLibraries(x, y)), libraryFingerprint(mergeLibraries(y, x)));
+    for (let k = 0; k < 2; k++) for (let i = 0; i < 3; i++) { server = mergeLibraries(server, devices[i]); devices[i] = structuredClone(server); }
+    for (const d of devices) assert.equal(libraryFingerprint(d), libraryFingerprint(server));
+    const bySlug = new Map([...server.entries.values()].map((e) => [e.slug, e]));
+    assert.equal(bySlug.size, server.entries.size, 'one entry per series');
+    for (const [slug, c] of best) if (!deleted.has(slug)) assert.ok(bySlug.get(slug).progress.chap >= c, `read of ${slug} ch${c} lost (have ${bySlug.get(slug).progress.chap})`);
+  }
+});

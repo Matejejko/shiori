@@ -84,6 +84,13 @@ the rules above into the one with the smaller id, and the other is deleted. Ever
 they converge on the same single entry. Importing `xyz` at chapter 22 into a library that has `xyz` at
 chapter 12 therefore gives one `xyz` at chapter 22 (and a correction made after the file's reading still wins).
 
+**Clocks.** Every decision above compares device timestamps. A device whose clock is more than 10 min off
+the server's (`Date` header) refuses to sync and says so, instead of silently winning or losing every conflict.
+
+**Known limits** (by design, not bugs): name/folder/tags/score/… are one group, so if two *offline* devices
+edit different fields of the same series, the later edit's whole group wins; reading on a device after you
+deleted the series elsewhere brings it back; tombstones are kept forever (a few bytes each).
+
 Two deliberate deviations from "progress by newer progress.ts, rest by newer ts":
 
 1. **Progress = furthest read since your last correction.** Plain "newer progress.ts wins" regresses

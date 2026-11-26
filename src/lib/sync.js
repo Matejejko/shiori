@@ -54,6 +54,17 @@ export function fromDoc(text) {
   };
 }
 
+// Every merge decision compares device timestamps, so a device whose clock is far off would
+// win (or lose) every conflict, and a clock in the future could pin progress or delete series
+// for as long as it is ahead. Refuse to write until the clock agrees with the server's.
+export const MAX_CLOCK_SKEW_MS = 10 * 60e3;
+function checkClock(remote, t) {
+  const server = remote && remote.date ? Date.parse(remote.date) : NaN;
+  if (!Number.isFinite(server) || Math.abs(t - server) <= MAX_CLOCK_SKEW_MS) return;
+  const min = Math.round((t - server) / 60e3);
+  throw new DavError(`This computer's clock is ${Math.abs(min)} min ${min > 0 ? 'ahead of' : 'behind'} the server's. Sync is paused until it is fixed (set the time automatically), because every merge decision compares times.`, 0, 'clock');
+}
+
 const sameContent = (a, b) => libraryFingerprint(a) === libraryFingerprint(b)
   && JSON.stringify(a.order) === JSON.stringify(b.order)
   && JSON.stringify(a.top || null) === JSON.stringify(b.top || null)
@@ -93,6 +104,7 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
       if (err.status === 409) await store.setSyncState({ dirsOk: false });
       throw err;
     }
+    checkClock(remote, now());
     const remoteLib = remote ? fromDoc(remote.text) : null;
 
     // merge + persist locally under the store lock (tracker/UI edits wait for us)

@@ -78,7 +78,7 @@ export class WebDav {
   async getText(path) {
     const res = await this.request('GET', path, { okStatuses: [200, 404] });
     if (res.status === 404) return null;
-    return { text: await res.text(), etag: res.headers.get('etag') };
+    return { text: await res.text(), etag: res.headers.get('etag'), date: res.headers.get('date') };
   }
 
   async getBytes(path) {

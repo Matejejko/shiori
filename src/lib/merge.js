@@ -178,6 +178,7 @@ export function mergeLibraries(base, other) {
   const entries = new Map();
   const meta = new Map();
   const tombs = new Map();
+  const dead = new Map(); // id -> merged copy that a tombstone beat (folded into a live duplicate, if any)
   const ids = new Set([...base.entries.keys(), ...other.entries.keys(), ...base.tombs.keys(), ...other.tombs.keys()]);
   for (const id of ids) {
     const t = Math.max(num(base.tombs.get(id)), num(other.tombs.get(id)));
@@ -185,11 +186,11 @@ export function mergeLibraries(base, other) {
     const be = base.entries.get(id), oe = other.entries.get(id);
     if (!be && !oe) continue;
     const m = mergeEntry(be, base.meta.get(id), oe, other.meta.get(id));
-    if (t !== NEG && t > editTs(m.entry, m.meta)) continue; // deleted
+    if (t !== NEG && t > editTs(m.entry, m.meta)) { dead.set(id, m); continue; } // deleted
     entries.set(id, m.entry);
     meta.set(id, m.meta);
   }
-  dedupeSeries(entries, meta, tombs);
+  dedupeSeries(entries, meta, tombs, dead);
   const [first, second] = num(other.layoutTs) > num(base.layoutTs) ? [other, base] : [base, other];
   const order = [];
   const placed = new Set();
@@ -209,28 +210,40 @@ export const seriesKey = (e) => `${e.siteId}|${slugKey(e.siteId, e.slug)}`;
 
 /**
  * Never keep two entries for one series (two devices pinned it, or an import brought it in
- * under another id): the smallest id survives — every device picks the same one — the
- * others are merged into it field by field and tombstoned. Mutates the maps.
+ * under another id): the smallest live id survives — every device picks the same one — the
+ * others are merged into it field by field and tombstoned. Copies of the series that a
+ * tombstone beat (`dead`) are merged into the survivor too: a device that was offline when a
+ * duplicate got folded away still has reads on that id, and they must not be lost.
+ * Entries without a usable slug are never grouped. Mutates the maps.
  */
-export function dedupeSeries(entries, meta, tombs) {
+export function dedupeSeries(entries, meta, tombs, dead = new Map()) {
+  const keyOf = (e) => (slugKey(e.siteId, e.slug) ? seriesKey(e) : null);
   const groups = new Map();
   for (const [id, e] of entries) {
-    const k = seriesKey(e);
+    const k = keyOf(e);
+    if (k === null) continue;
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(id);
   }
+  const fold = (keep, dup, dm) => {
+    const m = mergeEntry(entries.get(keep), meta.get(keep), withField(dup, 'id', keep), dm);
+    entries.set(keep, m.entry); meta.set(keep, m.meta);
+  };
   for (const ids of groups.values()) {
     if (ids.length < 2) continue;
     ids.sort();
     const keep = ids[0];
     for (const id of ids.slice(1)) {
       const dup = entries.get(id), dm = metaOf(dup, meta.get(id));
-      const m = mergeEntry(entries.get(keep), meta.get(keep), withField(dup, 'id', keep), dm);
-      entries.set(keep, m.entry); meta.set(keep, m.meta);
+      fold(keep, dup, dm);
       // newer than anything that copy has seen, so it stays deleted on every device
       tombs.set(id, Math.max(num(tombs.get(id)), dm.u + 1));
       entries.delete(id); meta.delete(id);
     }
+  }
+  for (const [id, m] of [...dead].sort((a, b) => cmp(a[0], b[0]))) {
+    const ids = groups.get(keyOf(m.entry));
+    if (ids && ids[0] !== id) fold(ids[0], m.entry, m.meta);
   }
 }
 
