@@ -184,5 +184,7 @@ src/lib/                 pure modules: mangapin (format), merge, library, store,
                          adapters + sites (site table), tracker, releases, cover, md5, base64
 src/popup/  src/app/     UI (DOM built with textContent only — no innerHTML anywhere)
 test/                    node:test suites, fixtures (incl. saved live site responses), OpenCloud scripts
+tools/shiori-to-mangapin.html  Shiori backup / server snapshot -> MangaPin export (one self-contained page,
+                         runs offline in any browser, uploads nothing; not part of the extension)
 tools/make-fixture.mjs   synthetic export generator
 ```
