@@ -35,7 +35,7 @@ The token is stored only in `chrome.storage.local` (`secret`), never in synced d
 sent over https (plain http is refused except to `localhost`), and *Test connection* never sends the saved
 token to a different server than the saved one.
 
-### ⚠️ Your server's certificate will block this as configured
+### Certificates (solved for this setup with an own CA)
 
 `oc.192.168.0.101.sslip.io` is served with **Traefik's default self-signed certificate**. Browser
 extensions cannot bypass certificate errors (there is no "accept the risk" for `fetch`), so every
@@ -75,7 +75,7 @@ associative and idempotent (property-tested), and every device converges.
 | `next` | max by ts |
 | everything else | whole group from the side with the newer *rest time* |
 | `ts` | max |
-| tombstone | wins only if newer than the last *user* edit or read |
+| tombstone | a delete is final on every device: later reads or edits elsewhere don't undo it; only a *replace* import that has the series restores it |
 
 **One series, one entry.** A series is identified by site + series slug (ignoring the rotating parts some
 sites put in their URLs), not by MangaPin's random id. If the same series ends up under two ids — pinned on
@@ -88,8 +88,8 @@ chapter 12 therefore gives one `xyz` at chapter 22 (and a correction made after 
 the server's (`Date` header) refuses to sync and says so, instead of silently winning or losing every conflict.
 
 **Known limits** (by design, not bugs): name/folder/tags/score/… are one group, so if two *offline* devices
-edit different fields of the same series, the later edit's whole group wins; reading on a device after you
-deleted the series elsewhere brings it back; tombstones are kept forever (a few bytes each).
+edit different fields of the same series, the later edit's whole group wins. Tombstones (deleted ids) are
+kept forever, ~30 bytes each: without one, a device that still has the series would upload it again.
 
 Two deliberate deviations from "progress by newer progress.ts, rest by newer ts":
 
@@ -109,7 +109,7 @@ Two deliberate deviations from "progress by newer progress.ts, rest by newer ts"
 Import modes (both show a dry-run summary first; applying re-checks it and asks again if a sync changed
 the library meanwhile):
 
-- **merge**: file entries merge in exactly like a sync. Series you deleted here are *not* re-added.
+- **merge**: file entries merge in exactly like a sync. Series you deleted (on any device) are *not* re-added.
   For series in both, MangaPin's `ts` counts as the edit time of name/folder/tags (MangaPin also bumps
   `ts` on its own release checks, so a later MangaPin export can win over an older Shiori edit).
 - **replace**: the file decides *which series exist*: everything not in the file is deleted on all devices,

@@ -141,7 +141,7 @@ test('a release check on one machine does not clobber a tag edit made on another
   }
 });
 
-test('deletes propagate; tombstones lose only to newer user edits', () => {
+test('deletes are final everywhere; only an explicit restore beats them', () => {
   const lib = emptyLibrary(); addEntry(lib, baseEntry(1000));
   const a = structuredClone(lib), b = structuredClone(lib);
   deleteEntry(a, ID, 2000);
@@ -152,11 +152,21 @@ test('deletes propagate; tombstones lose only to newer user edits', () => {
   c.entries.set(ID, withField(withField(c.entries.get(ID), 'latest', { chap: 99, ts: 3000 }), 'ts', 3000));
   assert.equal(mergeLibraries(a, c).entries.has(ID), false);
 
-  // a real edit after the delete does
+  // neither does reading or editing it on a device that had not seen the delete yet
+  // (e.g. a restored browser tab on the old site after you moved the series to another)
   const d = structuredClone(lib);
   editEntry(d, ID, { folder: 2 }, 3000);
-  assert.equal(mergeLibraries(a, d).entries.has(ID), true);
-  assert.equal(mergeLibraries(d, a).entries.has(ID), true);
+  setProgress(d, ID, 40, { now: 3100 });
+  assert.equal(mergeLibraries(a, d).entries.has(ID), false);
+  assert.equal(mergeLibraries(d, a).entries.has(ID), false);
+
+  // a restore (replace import) after the delete does, and survives the other device's tombstone
+  const e = structuredClone(lib);
+  e.meta.set(ID, { ...e.meta.get(ID), rs: 4000, u: 4000 });
+  for (const r of [mergeLibraries(a, e), mergeLibraries(e, a)]) assert.equal(r.entries.has(ID), true);
+  // and deleting it again after the restore works
+  const f = mergeLibraries(a, e); deleteEntry(f, ID, 5000);
+  assert.equal(mergeLibraries(f, e).entries.has(ID), false);
 });
 
 test('library merge: commutative, idempotent and multi-device convergent', () => {
@@ -179,7 +189,7 @@ test('library merge: commutative, idempotent and multi-device convergent', () =>
         devices[devices.indexOf(d)] = structuredClone(merged);
         continue;
       }
-      if (!d.entries.has(id)) { if (R.bool(0.2)) addEntry(d, { ...baseEntry(now), id, slug: `s${id}` }); continue; }
+      if (!d.entries.has(id)) { if (!d.tombs.has(id) && R.bool(0.2)) addEntry(d, { ...baseEntry(now), id, slug: `s${id}` }); continue; }
       if (R.bool(0.1)) { deleteEntry(d, id, now); continue; }
       const v = mutate(d.entries.get(id), d.meta.get(id), now);
       d.entries.set(id, v.entry); d.meta.set(id, v.meta);
@@ -194,7 +204,7 @@ test('library merge: commutative, idempotent and multi-device convergent', () =>
       assert.equal(libraryFingerprint(d), libraryFingerprint(server));
       assert.deepEqual(d.order, server.order);
     }
-    for (const [id, e] of server.entries) assert.ok(!(server.tombs.get(id) > editTs(e, server.meta.get(id))));
+    for (const [id] of server.entries) assert.ok(!(server.tombs.get(id) > (server.meta.get(id)?.rs ?? -Infinity)));
   }
 });
 

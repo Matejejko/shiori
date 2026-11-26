@@ -91,8 +91,8 @@ export function planImport(local, localCovers, text, mode, now = Date.now()) {
       if (local.tombs.has(id) && !local.entries.has(id)) summary.restored.push(short(file.entries.get(id)));
       tombs.delete(id);
       // keeping/restoring a series is a user decision as of now: it must outlive any
-      // tombstone another device still has (u only decides deletes, not field values)
-      file.meta.set(id, { ...file.meta.get(id), u: now });
+      // tombstone another device still has (rs/u only decide deletes, not field values)
+      file.meta.set(id, { ...file.meta.get(id), u: now, rs: now });
     }
     const kept = { ...local, entries: new Map([...local.entries].filter(([id]) => keep.has(id))), tombs: new Map() };
     const merged = mergeLibraries(file, kept);

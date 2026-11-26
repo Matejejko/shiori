@@ -26,8 +26,9 @@
 // Entries are never reshaped: the winner's object is copied with its own key order and only
 // the three group fields (+ts) are replaced in place (or inserted in MangaPin's field order).
 //
-// Sidecar meta per id: { r, pm?, u, pf? } — rest time, manual-correction time, last user
-// edit/read time (decides tombstones; max-merged), extra frontier events. It lives in
+// Sidecar meta per id: { r, pm?, u, pf?, rs? } — rest time, manual-correction time, last user
+// edit/read time (a delete's tombstone is set after it), extra frontier events, restore time
+// (the only thing that beats an older tombstone). It lives in
 // Shiori's storage and library.json only — never in a MangaPin export.
 
 import { withField } from './mangapin.js';
@@ -58,15 +59,17 @@ export function metaOf(entry, meta) {
   const r = typeof meta?.r === 'number' ? meta.r : num(entry?.ts) === NEG ? 0 : entry.ts;
   // pm: manual-correction time (older builds called it `pe`, with 0 meaning "none")
   const pm = typeof meta?.pm === 'number' ? meta.pm : typeof meta?.pe === 'number' && meta.pe > 0 ? meta.pe : NEG;
-  const u = Math.max(typeof meta?.u === 'number' ? meta.u : NEG, r, num(entry?.progress?.ts));
+  const rs = typeof meta?.rs === 'number' ? meta.rs : NEG;
+  const u = Math.max(typeof meta?.u === 'number' ? meta.u : NEG, r, num(entry?.progress?.ts), rs);
   const pf = Array.isArray(meta?.pf) ? meta.pf.filter((x) => isObj(x)) : [];
   const out = { r, u };
   if (pm !== NEG) out.pm = pm;
+  if (rs !== NEG) out.rs = rs;
   if (pf.length) out.pf = pf;
   return out;
 }
 
-/** Time of the last user-intended change; tombstones only beat entries older than this. */
+/** Time of the last user-intended change (a delete's tombstone is set after it). */
 export function editTs(entry, meta) {
   return metaOf(entry, meta).u;
 }
@@ -137,6 +140,8 @@ export function mergeEntry(a, aMeta, b, bMeta) {
   if (ts !== NEG && out.ts !== ts) out = withField(out, 'ts', ts);
   const meta = { r: Math.max(ma.r, mb.r), u: Math.max(ma.u, mb.u) };
   if (pm !== NEG) meta.pm = pm;
+  const rs = Math.max(ma.rs ?? NEG, mb.rs ?? NEG);
+  if (rs !== NEG) meta.rs = rs;
   if (pf.length) meta.pf = pf;
   return { entry: out, meta };
 }
@@ -186,7 +191,9 @@ export function mergeLibraries(base, other) {
     const be = base.entries.get(id), oe = other.entries.get(id);
     if (!be && !oe) continue;
     const m = mergeEntry(be, base.meta.get(id), oe, other.meta.get(id));
-    if (t !== NEG && t > editTs(m.entry, m.meta)) { dead.set(id, m); continue; } // deleted
+    // a delete is final everywhere: reads and edits on a device that had not seen it yet do not
+    // bring the series back; only an explicit restore (replace import) made after it does
+    if (t !== NEG && t > (m.meta.rs ?? NEG)) { dead.set(id, m); continue; }
     entries.set(id, m.entry);
     meta.set(id, m.meta);
   }

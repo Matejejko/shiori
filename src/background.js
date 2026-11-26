@@ -286,7 +286,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
       name: cleanName(nameOverride || scraped.h1 || scraped.ogTitle || scraped.title, new URL(tab.url).hostname) || slug,
       img: cover ? cover.key : undefined,
       progress: readSoFar ? (readSoFar.slug ? { chap: readSoFar.chap, slug: readSoFar.slug, ts: now } : { chap: readSoFar.chap, ts: now }) : undefined,
-      cLang: 'en', folder: Number(folder) || 1, tags: tagIdsFromNames(scraped.genres || []), ts: now, createTs: now, id: newId(new Set(lib.entries.keys())),
+      cLang: 'en', folder: Number(folder) || 1, tags: tagIdsFromNames(scraped.genres || []), ts: now, createTs: now, id: newId(new Set([...lib.entries.keys(), ...lib.tombs.keys()])) /* a deleted id stays deleted */,
     };
     for (const k of ENTRY_FIELD_ORDER) if (fields[k] !== undefined) e[k] = fields[k];
     if (cover) await store.putCovers([[cover.key, cover.b64]]);
