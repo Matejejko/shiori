@@ -1,7 +1,7 @@
 import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
 import { formPatch } from '../lib/library.js';
 import { DEFAULT_LABELS } from '../lib/labels.js';
-import { computeStats, MIN_PER_CHAPTER } from '../lib/stats.js';
+import { computeStats, computeReading, MIN_PER_CHAPTER } from '../lib/stats.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { lib: null, covers: {}, st: null, folder: '' };
@@ -313,13 +313,53 @@ const fmtInt = (n) => Math.round(n).toLocaleString();
 function statTile(value, label, sub, cls = '') {
   return h('div', { class: 'stat-tile ' + cls }, h('div', { class: 'v', text: value }), h('div', { class: 'l', text: label }), sub ? h('div', { class: 'sub', text: sub }) : null);
 }
+const fmtWeek = (t) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+
+/** Chapters per week: one hue, thin columns from a shared baseline, value on the current week, tooltip per column, table view. */
+function weekChart(perWeek) {
+  const max = Math.max(1, ...perWeek.map((w) => w.chapters));
+  const tip = h('div', { class: 'wk-tip', attrs: { role: 'tooltip', hidden: true } });
+  const show = (col, w) => {
+    tip.textContent = `Week of ${fmtWeek(w.start)}: ${fmtInt(w.chapters)} chapters`;
+    tip.hidden = false;
+    tip.style.left = `${col.offsetLeft + col.offsetWidth / 2}px`;
+  };
+  const cols = perWeek.map((w, i) => {
+    const last = i === perWeek.length - 1;
+    const bar = h('span', { class: 'wk-bar' });
+    bar.style.height = `${w.chapters ? Math.max(2, (w.chapters / max) * 100) : 0}%`;
+    const col = h('div', { class: 'wk-col' + (last ? ' now' : ''), attrs: { tabindex: 0, 'aria-label': `Week of ${fmtWeek(w.start)}: ${w.chapters} chapters` } },
+      last && w.chapters ? h('span', { class: 'wk-val', text: fmtInt(w.chapters) }) : null, bar);
+    for (const ev of ['mouseenter', 'focus']) col.addEventListener(ev, () => show(col, w));
+    for (const ev of ['mouseleave', 'blur']) col.addEventListener(ev, () => { tip.hidden = true; });
+    return col;
+  });
+  return h('figure', { class: 'wk' },
+    h('figcaption', { class: 'muted small', text: 'Chapters per week, last 12 weeks' }),
+    h('div', { class: 'wk-plot' }, h('span', { class: 'wk-max muted', text: fmtInt(max) }), ...cols, tip),
+    h('div', { class: 'wk-axis muted' }, perWeek.map((w, i) => h('span', { text: i % 4 === 0 || i === perWeek.length - 1 ? fmtWeek(w.start) : '' }))),
+    h('details', { class: 'wk-table' }, h('summary', { class: 'muted small', text: 'Show as table' }),
+      h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Week of' }), h('th', { text: 'Chapters' }))),
+        h('tbody', {}, [...perWeek].reverse().map((w) => h('tr', {}, h('td', { text: fmtWeek(w.start) }), h('td', { text: fmtInt(w.chapters) })))))));
+}
+
 async function renderStats() {
   if (!state.lib) return;
   let seen = {};
   try { seen = (await api.storage.local.get('seen')).seen || {}; } catch { /* page without storage access */ }
   const s = computeStats(state.lib.entries, seen);
+  const r = computeReading(state.lib.days);
   const box = clear($('stats'));
   box.append(
+    h('section', { class: 'stat-group' }, h('h2', { text: 'Reading log' }),
+      h('div', { class: 'stat-grid five' },
+        statTile(fmtInt(r.today), 'Today', `≈ ${fmtInt(r.today * MIN_PER_CHAPTER)} min`),
+        statTile(fmtInt(r.week), 'Last 7 days', `≈ ${fmtInt((r.week * MIN_PER_CHAPTER) / 60)} h`),
+        statTile(fmtInt(r.month), 'This month'),
+        statTile(fmtInt(r.year), 'This year'),
+        statTile(`${r.streak} d`, 'Reading streak', `longest ${r.longest} d`)),
+      weekChart(r.perWeek),
+      h('p', { class: 'muted small', text: r.since ? `Counting chapters you read on any synced device since ${new Date(r.since).toLocaleDateString()}.` : 'Counts start with the next chapter you read, on any synced device.' })),
     h('section', { class: 'stat-group' }, h('h2', { text: 'Reading' }),
       h('div', { class: 'stat-grid' },
         statTile(fmtInt(s.chapters), 'Chapters read', 'in pinned series', 'hero'),

@@ -13,7 +13,7 @@
 
 import { emptyLabels } from './merge.js';
 
-const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), layoutTs: 0 });
+const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), days: {}, layoutTs: 0 });
 
 export const DEFAULT_CFG = {
   davUrl: '',          // full WebDAV root of the user's space, e.g. https://host/remote.php/webdav/
@@ -68,6 +68,7 @@ export class Store {
       meta: new Map(Object.entries(idx.meta || {})),
       tombs: new Map(Object.entries(idx.tombs || {})),
       labels: idx.labels || emptyLabels(),
+      days: idx.days || {},
       layoutTs: idx.layoutTs || 0,
     };
   }
@@ -91,6 +92,7 @@ export class Store {
       meta: Object.fromEntries([...lib.meta].filter(([id]) => lib.entries.has(id))),
       tombs: Object.fromEntries(lib.tombs),
       labels: lib.labels || emptyLabels(),
+      days: lib.days || {},
       layoutTs: lib.layoutTs || 0,
     };
     if (!silent) {
@@ -161,6 +163,14 @@ export class Store {
     delete cfg.token; // never let the token land in cfg
     await this.area.set({ cfg });
     return cfg;
+  }
+  /** Random id of this browser profile (the reading log counts per device). Never synced as a secret. */
+  async deviceId() {
+    const { device } = await this.area.get('device');
+    if (typeof device === 'string' && device) return device;
+    const id = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => b.toString(16).padStart(2, '0')).join('');
+    await this.area.set({ device: id });
+    return id;
   }
   async getToken() {
     const { secret } = await this.area.get('secret');

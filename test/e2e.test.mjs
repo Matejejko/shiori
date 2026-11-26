@@ -54,6 +54,8 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   watch(app, 'app');
   await app.goto(`${base}/src/app/app.html`);
   const expected = parseExport(fixture.text).entries.length;
+  // a Stats tile's value, found by its label (the page's sections can move)
+  const statValue = (label) => app.$$eval('#stats .stat-tile', (tiles, l) => tiles.find((t) => t.querySelector('.l')?.textContent === l)?.querySelector('.v')?.textContent ?? null, label);
 
   await t.test(`import shows ${expected} entries`, async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=io]');
@@ -105,7 +107,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.waitForSelector('#stats .stat-tile');
     assert.equal(await app.evaluate(() => document.querySelector('#menu').matches(':popover-open')), false);
     const chapters = parseExport(fixture.text).entries.reduce((s, x) => s + (typeof x.obj.progress?.chap === 'number' ? Math.floor(x.obj.progress.chap) : 0), 0);
-    assert.equal(await app.textContent('#stats .stat-tile .v'), chapters.toLocaleString('en-US'));
+    assert.equal(await statValue('Chapters read'), chapters.toLocaleString('en-US'));
     await app.click('#folderTabs button[data-folder=""]');
   });
 
@@ -227,7 +229,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const statNums = async () => {
       await app.click('#openSettings'); await app.click('#menu button[data-tab=stats]');
       await app.waitForSelector('#stats .stat-tile');
-      return app.$$eval('#stats .stat-tile .v', (els) => els.slice(0, 2).map((x) => Number(x.textContent.replace(/[^0-9]/g, ''))));
+      return [await statValue('Chapters read'), await statValue('Chapters incl. unpinned')].map((x) => Number(x.replace(/[^0-9]/g, '')));
     };
     const [pinnedCh, allCh] = await statNums();
     assert.equal(allCh - pinnedCh, 23);
@@ -291,6 +293,15 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.equal(await app.textContent('#edit .ed-progress .num'), progress);
     assert.equal(await app.textContent('#edit .line .chip >> nth=1'), folder);
     await app.keyboard.press('Escape');
+  });
+
+  await t.test('the reading log counted the chapters read in this session', async () => {
+    await app.click('#openSettings'); await app.click('#menu button[data-tab=stats]');
+    await app.waitForSelector('.wk-col');
+    assert.equal(await app.locator('.wk-col').count(), 12);
+    const today = Number((await statValue('Today')).replace(/\D/g, ''));
+    assert.ok(today >= 1, `today shows ${today}`);
+    await app.click('#folderTabs button[data-folder=""]');
   });
 
   await t.test('no console errors on extension pages', () => {

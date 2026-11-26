@@ -139,6 +139,15 @@ anything still lost in that window is re-uploaded by the next sync because no de
 local data. `If-Match` works correctly (stale ETag → 412, atomic under parallel writers) and is what
 every later write uses.
 
+## Stats
+
+Library → ☰ → Stats. **Reading log**: chapters read today, in the last 7 days, this month and this year,
+your reading streak, and a 12-week chart — counted on every device (pinned series, and unpinned ones on
+known sites) and synced, so it is your total. Stored as one number per device per day you read
+(`library.json` → `days`, ~20 bytes each); there is no per-chapter history. Counting starts with this
+version. Below it: totals from your library (chapters read, waiting, folders, sites, tags, scores).
+Time is an estimate (2.5 min per chapter), not measured.
+
 ## Moving a series to another site
 
 Sites go down or change domain. In a series' window: *Edit details* → **Move to another site** → paste the

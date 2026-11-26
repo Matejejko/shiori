@@ -5,7 +5,7 @@ import { Store } from './lib/store.js';
 import { WebDav } from './lib/webdav.js';
 import { tagIdsFromNames } from './lib/labels.js';
 import { syncOnce } from './lib/sync.js';
-import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry } from './lib/library.js';
+import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry, countRead } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
 import { locate, trackVisit, seriesOf, seenKey, seenFor, noteSeen } from './lib/tracker.js';
@@ -124,11 +124,18 @@ api.tabs.onUpdated.addListener((tabId, change, tab) => {
   store.withLock(async () => {
     const lib = await store.loadLibrary();
     const id = trackVisit(lib, url);
-    if (id) await store.saveLibrary(lib);
-    else if (!locate(lib, url).entry) {
+    if (id) {
+      countRead(lib, await store.deviceId());
+      await store.saveLibrary(lib);
+    } else if (!locate(lib, url).entry) {
       // not pinned (yet): remember how far you read, so pinning later starts there
       const { seen = {} } = await api.storage.local.get('seen');
-      if (noteSeen(seen, url)) await api.storage.local.set({ seen });
+      if (noteSeen(seen, url)) {
+        await api.storage.local.set({ seen });
+        // the reading log counts it too, but only on known manga sites (a "chapter-3" path
+        // on any other site is not reading)
+        if (!seriesOf(url)?.generic) { countRead(lib, await store.deviceId()); await store.saveLibrary(lib); }
+      }
     }
   }).catch((e) => console.warn('[shiori track]', e));
 });
@@ -383,6 +390,7 @@ const handlers = {
     return {
       entries: lib.order.map((id) => lib.entries.get(id)),
       labels: lib.labels,
+      days: lib.days,
       relerr,
       urls: Object.fromEntries(lib.order.map((id) => {
         const e = lib.entries.get(id);

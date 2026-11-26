@@ -33,6 +33,7 @@ export function docOf(lib, now = Date.now()) {
     meta: sortObj(new Map(order.map((id) => [id, metaOf(lib.entries.get(id), lib.meta.get(id))]))),
     tombs: sortObj(lib.tombs),
     labels: lib.labels || emptyLabels(),
+    days: lib.days || {},
     layoutTs: lib.layoutTs || 0,
   };
 }
@@ -63,6 +64,7 @@ export function libFromDoc(d, what = 'library') {
     order, entries, meta,
     tombs: new Map(Object.entries(d.tombs || {}).filter(([, t]) => typeof t === 'number')),
     labels: d.labels || emptyLabels(),
+    days: d.days && typeof d.days === 'object' && !Array.isArray(d.days) ? d.days : {},
     layoutTs: typeof d.layoutTs === 'number' ? d.layoutTs : 0,
   };
 }

@@ -200,6 +200,26 @@ export function mergeEntry(a, aMeta, b, bMeta) {
 
 export function emptyLabels() { return { folder: {}, type: {}, tag: {} }; }
 
+/**
+ * Reading log: chapters read per device per local day, { device: { 'YYYY-MM-DD': n } }. Each
+ * device only ever raises its own counts, so the merge is a max per (device, day) and the
+ * library's total for a day is the sum over devices. ~20 bytes per device per day read.
+ */
+export function mergeDays(a, b) {
+  const out = {};
+  for (const src of [a, b]) {
+    if (!isObj(src)) continue;
+    for (const [dev, days] of Object.entries(src)) {
+      if (!isObj(days)) continue;
+      const o = out[dev] || (out[dev] = {});
+      for (const [d, n] of Object.entries(days)) if (typeof n === 'number' && n > (o[d] ?? 0)) o[d] = n;
+    }
+  }
+  const sorted = {};
+  for (const dev of Object.keys(out).sort()) sorted[dev] = Object.fromEntries(Object.keys(out[dev]).sort().map((d) => [d, out[dev][d]]));
+  return sorted;
+}
+
 export function mergeLabels(a = emptyLabels(), b = emptyLabels()) {
   const out = emptyLabels();
   for (const kind of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) {
@@ -249,7 +269,7 @@ export function mergeLibraries(base, other) {
     if (entries.has(id) && !placed.has(id)) { placed.add(id); order.push(id); }
   }
   return {
-    order, entries, meta, tombs, labels: mergeLabels(base.labels, other.labels),
+    order, entries, meta, tombs, labels: mergeLabels(base.labels, other.labels), days: mergeDays(base.days, other.days),
     layoutTs: Math.max(num(base.layoutTs), num(other.layoutTs), 0),
   };
 }
@@ -303,5 +323,6 @@ export function libraryFingerprint(lib) {
     e: ids.map((id) => [id, lib.entries.get(id), metaOf(lib.entries.get(id), lib.meta.get(id))]),
     t: [...lib.tombs.entries()].sort((x, y) => cmp(x[0], y[0])),
     l: lib.labels,
+    d: mergeDays(lib.days, {}),
   });
 }

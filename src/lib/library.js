@@ -5,7 +5,7 @@ import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels, seriesKey } fr
 import { docOf, libFromDoc } from './sync.js';
 
 export function emptyLibrary() {
-  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), layoutTs: 0 };
+  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), days: {}, layoutTs: 0 };
 }
 
 const BACKUP_FORMAT = 'shiori-backup';
@@ -292,6 +292,20 @@ export function moveEntry(lib, id, { siteId, slug, url }, now = Date.now()) {
   lib.order.splice(at < 0 ? lib.order.length : at, 0, newIdv);
   deleteEntry(lib, id, now);
   return newIdv;
+}
+
+/** Local calendar day of a time, 'YYYY-MM-DD' (the reading log's key). */
+export function dayKey(t = Date.now()) {
+  const d = new Date(t);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** One chapter read on this device today (see mergeDays). */
+export function countRead(lib, device, now = Date.now()) {
+  const days = lib.days || (lib.days = {});
+  const mine = days[device] || (days[device] = {});
+  const k = dayKey(now);
+  mine[k] = (mine[k] || 0) + 1;
 }
 
 export function addEntry(lib, entry, now = Date.now()) {

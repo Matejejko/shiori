@@ -51,3 +51,53 @@ export function computeStats(entries, seen = {}, now = Date.now()) {
     longest: longest ? { name: longest.name, chap: longest.progress.chap } : null,
   };
 }
+
+// ---- reading log (chapters per day, see mergeDays) ------------------------------------------
+
+const dayOf = (t) => { const d = new Date(t); return new Date(d.getFullYear(), d.getMonth(), d.getDate()); };
+const keyOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+
+/**
+ * @param {Object<string, Object<string, number>>} days  { device: { 'YYYY-MM-DD': chapters } }
+ * @returns totals for today / 7 days / month / year, streaks, and the last `weeks` Monday-weeks
+ */
+export function computeReading(days, now = Date.now(), weeks = 12) {
+  const total = new Map(); // day -> chapters, all devices
+  for (const dev of Object.values(days || {})) {
+    if (!dev || typeof dev !== 'object') continue;
+    for (const [d, n] of Object.entries(dev)) if (num(n) && n > 0) total.set(d, (total.get(d) || 0) + n);
+  }
+  const today = dayOf(now);
+  const at = (d) => total.get(keyOf(d)) || 0;
+  const sumFrom = (start) => { let s = 0; for (const [k, n] of total) if (k >= keyOf(start) && k <= keyOf(today)) s += n; return s; };
+
+  // current streak: today counts if you read today, else it is still alive from yesterday
+  let streak = 0;
+  for (let d = at(today) ? today : addDays(today, -1); at(d) > 0; d = addDays(d, -1)) streak++;
+  let longest = 0, run = 0, prev = null;
+  for (const k of [...total.keys()].sort()) {
+    const d = new Date(+k.slice(0, 4), +k.slice(5, 7) - 1, +k.slice(8, 10));
+    run = prev && keyOf(addDays(prev, 1)) === k ? run + 1 : 1;
+    longest = Math.max(longest, run);
+    prev = d;
+  }
+
+  const monday = addDays(today, -((today.getDay() + 6) % 7));
+  const perWeek = [];
+  for (let w = weeks - 1; w >= 0; w--) {
+    const start = addDays(monday, -7 * w);
+    let n = 0;
+    for (let i = 0; i < 7; i++) n += at(addDays(start, i));
+    perWeek.push({ start: start.getTime(), chapters: n });
+  }
+  const first = [...total.keys()].sort()[0] || null;
+  return {
+    today: at(today),
+    week: sumFrom(addDays(today, -6)),
+    month: sumFrom(new Date(today.getFullYear(), today.getMonth(), 1)),
+    year: sumFrom(new Date(today.getFullYear(), 0, 1)),
+    streak, longest, perWeek,
+    since: first ? new Date(+first.slice(0, 4), +first.slice(5, 7) - 1, +first.slice(8, 10)).getTime() : null,
+  };
+}
