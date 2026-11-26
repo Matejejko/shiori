@@ -97,6 +97,8 @@ function fillSelect(sel, all, items) {
 }
 function renderFilters() {
   fillSelect($('fType'), 'Any type', knownKeys('type').map((f) => [f, labelFor('type', f)]));
+  // only worth showing when the library mixes comics with novels/anime (no type = comic)
+  $('fType').hidden = new Set(state.lib.entries.map((e) => e.type ?? 1)).size < 2;
   fillTagPicker($('fTag'), knownKeys('tag'), new Set(pickedTags($('fTag'))), 'Any tag');
   fillSelect($('fSite'), 'All sites', distinct(state.lib.entries.map((e) => e.siteId)).map((s) => [s, s]));
 }
@@ -109,7 +111,7 @@ function renderGrid() {
   let list = state.lib.entries.filter((e) => {
     if (q && !(`${e.name} ${e.siteId} ${e.slug}`.toLowerCase().includes(q))) return false;
     if (f.folder && String(e.folder) !== f.folder) return false;
-    if (f.type && String(e.type) !== f.type) return false;
+    if (f.type && String(e.type ?? 1) !== f.type) return false;
     if (f.tags.length && !f.tags.every((t) => Array.isArray(e.tags) && e.tags.includes(t))) return false; // all ticked tags
     if (f.site && e.siteId !== f.site) return false;
     if (f.unread && !(unreadBy(e) > 0)) return false;

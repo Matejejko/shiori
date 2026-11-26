@@ -226,3 +226,9 @@ test('stats: chapters (pinned and with recent unpinned reads), folders, waiting,
   assert.deepEqual(s.topTags[0], [81, 2]);
   assert.deepEqual(s.longest, { name: 'A', chap: 120.5 });
 });
+
+test('MangaPin content types have names (no type = comic)', async () => {
+  const { labelName } = await import('../src/ui/dom.js');
+  assert.equal(labelName(null, 'type', 1), 'Comic');
+  assert.equal(labelName(null, 'type', 2), 'Novel');
+});
