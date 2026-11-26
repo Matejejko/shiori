@@ -78,9 +78,14 @@ function planId(mode, summary) {
  * @param {Set<string>} localCovers  cover keys present locally
  * @param {string} text              file contents
  * @param {'merge'|'replace'} mode
+ * @param {'shiori'|'mangapin'} [source]  what the user chose to import (a Shiori backup or server snapshot, or a MangaPin export)
  */
-export function planImport(local, localCovers, text, mode, now = Date.now()) {
+export function planImport(local, localCovers, text, mode, now = Date.now(), source) {
   const read = readImportFile(text);
+  // the user says what they are importing; a file of the other kind is refused, not guessed
+  if (source && (source === 'mangapin') !== (read.kind === 'mangapin')) {
+    throw new Error(read.kind === 'mangapin' ? 'this is a MangaPin export — choose "MangaPin export" above' : 'this is a Shiori file — choose "Shiori backup" above');
+  }
   const { lib: file, covers: fileCovers } = read;
   const summary = {
     mode,

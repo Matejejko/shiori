@@ -58,6 +58,10 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   await t.test(`import shows ${expected} entries`, async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=io]');
     await app.setInputFiles('#file', fixture.path);
+    // "Shiori backup" is the default: a MangaPin file is refused with a hint, not guessed
+    await app.waitForSelector('#summary .err-text');
+    assert.match(await app.textContent('#summary .err-text'), /MangaPin export/);
+    await app.check('input[name=source][value=mangapin]');
     await app.waitForSelector('#summary .summary');
     assert.match(await app.textContent('#summary'), new RegExp(`${expected} entries`));
     await app.click('#summary button');
@@ -108,7 +112,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
   await t.test('export through the UI is a Shiori backup holding every imported entry and cover', async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=io]');
     const [dl] = await Promise.all([app.waitForEvent('download'), app.click('#export')]);
-    assert.match(dl.suggestedFilename(), /^Shiori-\d{12}\.json$/);
+    assert.match(dl.suggestedFilename(), /^Shiori-\d{8}\.json$/);
     const text = readFileSync(await dl.path(), 'utf8');
     assert.equal(JSON.parse(text).format, 'shiori-backup');
     assert.ok(backupContent(text) === mangapinContent(fixture.text), 'backup differs from the imported entries/covers');

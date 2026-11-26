@@ -376,8 +376,9 @@ const handlers = {
     const m = await store.getCovers(keys || []);
     return Object.fromEntries(m);
   },
-  async importFile({ text, mode, apply, planId }) {
+  async importFile({ text, mode, source, apply, planId }) {
     mode = mode === 'replace' ? 'replace' : 'merge';
+    source = source === 'mangapin' ? 'mangapin' : 'shiori';
     // Replace decides which series exist on every device: pull the server first so series
     // that so far only exist elsewhere are in the plan (and get deleted, not resurrected).
     let syncWarning = '';
@@ -387,7 +388,7 @@ const handlers = {
     }
     return store.withLock(async () => {
       const lib = await store.loadLibrary();
-      const plan = planImport(lib, new Set(await store.coverKeys()), text, mode);
+      const plan = planImport(lib, new Set(await store.coverKeys()), text, mode, Date.now(), source);
       plan.summary.syncWarning = syncWarning;
       if (apply) {
         if (planId && planId !== plan.summary.planId) throw new Error('PLAN_CHANGED: your library changed since the dry run (a sync ran). Review the new summary.');

@@ -341,9 +341,10 @@ async function dryRun() {
   const box = clear($('summary'));
   if (!fileText) return;
   const mode = document.querySelector('input[name=mode]:checked').value;
+  const source = document.querySelector('input[name=source]:checked').value;
   box.append(h('p', { class: 'muted', text: 'Analysing…' }));
   let r;
-  try { r = await send('importFile', { text: fileText, mode, apply: false }); }
+  try { r = await send('importFile', { text: fileText, mode, source, apply: false }); }
   catch (e) { clear(box).append(h('p', { class: 'err-text', text: 'Cannot import: ' + e.message })); return; }
   const s = r.summary;
   const names = (list) => h('ul', {}, list.slice(0, 200).map((x) => h('li', { text: `${x.name} (${x.siteId})` })));
@@ -376,7 +377,7 @@ async function dryRun() {
         if (mode === 'replace' && s.removed.length && !(await confirmBox('Replace your library?', `${s.removed.length} series that are not in the file will be deleted on all synced devices.`, 'Replace library'))) return;
         ev.target.disabled = true;
         try {
-          await send('importFile', { text: fileText, mode, apply: true, planId: s.planId });
+          await send('importFile', { text: fileText, mode, source, apply: true, planId: s.planId });
           clear(box).append(h('p', { class: 'ok-text', text: `Imported. Library now has ${(await send('state')).count} entries.` }));
           state.covers = {};
           await load();
@@ -393,7 +394,7 @@ $('file').addEventListener('change', async () => {
   fileText = file ? await file.text() : null;
   dryRun();
 });
-for (const r of document.querySelectorAll('input[name=mode]')) r.addEventListener('change', dryRun);
+for (const r of document.querySelectorAll('input[name=mode], input[name=source]')) r.addEventListener('change', dryRun);
 
 $('export').addEventListener('click', async () => {
   $('exportMsg').textContent = 'Building…';

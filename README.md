@@ -68,7 +68,7 @@ resolve even on your LAN.
 - Covers referenced by a MangaPin entry but missing from its `imgs` (MangaPin loses some) are kept as
   references and reported in the import dry run. Covers no entry references are not imported.
 - `folder`, `type` and `tags` stay raw numbers; Library → Labels gives them names (synced).
-- Export: `Shiori-YYYYMMDDHHmm.json` (local time), a Shiori backup: `{format: "shiori-backup", version,
+- Export: `Shiori-DDMMYYYY.json` (local date), a Shiori backup: `{format: "shiori-backup", version,
   library: <same as library.json>, covers: {key: base64}}`. Importing it merges like another device that
   synced (edit times and deletes included), or replaces as below. MangaPin can't read it.
 
@@ -115,7 +115,8 @@ Two deliberate deviations from "progress by newer progress.ts, rest by newer ts"
    folder/tag edit made on the offline laptop. Shiori keeps the time of the last *user edit* of the rest
    fields in a sidecar (`meta`), next to the entries in its own storage and `library.json`.
 
-Import modes (both show a dry-run summary first; applying re-checks it and asks again if a sync changed
+Import: choose what the file is — **Shiori backup** (default; also a server snapshot) or **MangaPin
+export**; a file of the other kind is refused with a hint. Modes (both show a dry-run summary first; applying re-checks it and asks again if a sync changed
 the library meanwhile):
 
 - **merge**: file entries merge in exactly like a sync. Series you deleted (on any device) are *not* re-added.

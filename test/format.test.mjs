@@ -41,7 +41,7 @@ test('cover key helpers', () => {
 });
 
 test('export filename format', () => {
-  assert.equal(exportFileName(new Date(2026, 0, 5, 7, 9)), 'Shiori-202601050709.json');
+  assert.equal(exportFileName(new Date(2026, 0, 5, 7, 9)), 'Shiori-05012026.json');
 });
 
 test('withField keeps existing order and inserts new keys in MangaPin order', () => {
@@ -58,6 +58,15 @@ test('unknown entry fields survive import -> backup -> import, field order inclu
   const again = planImport(emptyLibrary(), new Set(), backup, 'replace');
   assert.equal(again.summary.kind, 'shiori');
   assert.equal(JSON.stringify(again.lib.entries.get('AAAAAAAAAA')), JSON.stringify(JSON.parse(src).entries[0]));
+});
+
+test('import refuses a file of the other kind than the one chosen', () => {
+  const backup = exportBackup(emptyLibrary(), () => undefined);
+  const mp = JSON.stringify({ version: 1, entries: [{ id: 'AAAAAAAAAA', siteId: 's', slug: 'x', name: 'n', ts: 1 }], imgs: {} });
+  assert.throws(() => planImport(emptyLibrary(), new Set(), mp, 'merge', 1, 'shiori'), /MangaPin export/);
+  assert.throws(() => planImport(emptyLibrary(), new Set(), backup, 'merge', 1, 'mangapin'), /Shiori file/);
+  assert.equal(planImport(emptyLibrary(), new Set(), mp, 'merge', 1, 'mangapin').summary.kind, 'mangapin');
+  assert.equal(planImport(emptyLibrary(), new Set(), backup, 'merge', 1, 'shiori').summary.kind, 'shiori');
 });
 
 test('a backup or library.json from a newer Shiori is refused, not misread', () => {
