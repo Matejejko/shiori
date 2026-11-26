@@ -287,3 +287,33 @@ test('deleting a series drops its cover locally, unless another series uses it',
   assert.equal(after.size, keys.size - 1);
   assert.equal(await store.getCover(img), undefined);
 });
+
+test('moving a series to another site keeps what is yours, drops the dead site, and syncs as one series', async () => {
+  const { moveEntry } = await import('../src/lib/library.js');
+  const dav = server();
+  const a = new Store(new MemoryArea()), b = new Store(new MemoryArea());
+  const lib = emptyLibrary();
+  addEntry(lib, { siteId: 'asura', slug: 'solo-max-b60d532c', name: 'Solo Max', img: 'local:3:00000000000000000000000000000000.webp', latest: { chap: 120, slug: 'c-120', ts: 5 }, next: { chap: 81, slug: 'c-81', ts: 5 }, progress: { chap: 80, slug: 'chapter-80', ts: 4 }, cLang: 'en', folder: 4, tags: [3, 7], score: 9, ts: 6, createTs: 1, id: 'OldOldOld1' });
+  await a.saveLibrary(lib);
+  await syncOnce({ store: a, dav: dav() }); await syncOnce({ store: b, dav: dav() });
+
+  const la = await a.loadLibrary();
+  const id = moveEntry(la, 'OldOldOld1', { siteId: 'vortex', slug: 'solo-max', url: 'https://vortexscans.org/series/solo-max' }, 1000);
+  await a.saveLibrary(la);
+  const e = la.entries.get(id);
+  assert.deepEqual([e.siteId, e.slug, e.name, e.folder, e.tags, e.score, e.progress.chap, e.createTs, e.img], ['vortex', 'solo-max', 'Solo Max', 4, [3, 7], 9, 80, 1, 'local:3:00000000000000000000000000000000.webp']);
+  assert.equal(e.latest, undefined); assert.equal(e.next, undefined); assert.equal(e.progress.slug, undefined);
+  assert.equal(la.entries.has('OldOldOld1'), false);
+  assert.equal(la.order[0], id);
+
+  // device b still on the old site: reads there after the move, then syncs -> one series, on the new site
+  const lb = await b.loadLibrary(); setProgress(lb, 'OldOldOld1', 81, { now: 2000 }); await b.saveLibrary(lb);
+  await syncOnce({ store: a, dav: dav() }); await syncOnce({ store: b, dav: dav() }); await syncOnce({ store: a, dav: dav() });
+  for (const s of [a, b]) {
+    const l = await s.loadLibrary();
+    assert.deepEqual([...l.entries.keys()], [id]);
+    assert.equal(l.entries.get(id).siteId, 'vortex');
+    assert.equal(l.entries.get(id).latest, undefined, 'the dead site\'s latest chapter does not come back');
+  }
+  assert.throws(() => moveEntry(la, id, { siteId: 'vortex', slug: 'solo-max' }), /already on that site/);
+});

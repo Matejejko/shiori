@@ -195,6 +195,7 @@ function openEditor(id) {
     startTs: h('input', { type: 'date', value: toDateInput(e.startTs) }),
     endTs: h('input', { type: 'date', value: toDateInput(e.endTs) }),
     progress: h('input', { type: 'number', step: 'any', min: 0, value: numOrEmpty(e.progress?.chap) }),
+    moveUrl: h('input', { type: 'url', placeholder: 'https://new-site/series/…', attrs: { 'aria-label': 'Address of the series on the new site' } }),
   };
   fillTagPicker(f.tags, knownKeys('tag', true), new Set(Array.isArray(e.tags) ? e.tags : []), '(no tags)');
   // values as shown; Save sends only what differs from this snapshot (see formPatch)
@@ -268,7 +269,17 @@ function openEditor(id) {
         h('label', {}, 'Add tag number', f.newTag)),
       h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Series' }),
         h('label', { class: 'full' }, 'Name', f.name),
-        h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url))),
+        h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url)),
+      h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Move to another site' }),
+        h('p', { class: 'muted small full', text: 'Site gone or moved? Paste this series’ address on the new site. Progress, folder, tags, score, dates and cover stay; the old site’s chapter list is dropped and the new one is checked.' }),
+        h('div', { class: 'full row tight' }, f.moveUrl, h('button', { type: 'button', class: 'ghost', text: 'Move', on: { click: async () => {
+          try {
+            const r = await send('move', { id, url: f.moveUrl.value });
+            dlg.close();
+            await load();
+            openEditor(r.id);
+          } catch (err) { msg.textContent = err.message; msg.className = 'small err-text'; }
+        } } })))),
     h('div', { class: 'ed-foot' },
       h('div', { class: 'row tight' },
         h('button', { type: 'button', class: 'danger quiet edit-only', text: 'Delete', on: { click: async () => {

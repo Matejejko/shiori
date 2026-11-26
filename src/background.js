@@ -5,12 +5,12 @@ import { Store } from './lib/store.js';
 import { WebDav } from './lib/webdav.js';
 import { tagIdsFromNames } from './lib/labels.js';
 import { syncOnce } from './lib/sync.js';
-import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread } from './lib/library.js';
+import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
 import { locate, trackVisit, seriesOf, seenKey, seenFor, noteSeen } from './lib/tracker.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
-import { seriesUrl, chapterUrl, getAdapter, siteName } from './lib/adapters.js';
+import { seriesUrl, chapterUrl, getAdapter, siteName, matchUrl } from './lib/adapters.js';
 
 const api = globalThis.browser ?? globalThis.chrome;
 const store = new Store(api.storage.local);
@@ -349,6 +349,25 @@ const handlers = {
       await store.saveLibrary(lib);
       return { ok: true };
     });
+  },
+  async move({ id, url }) {
+    let u;
+    try { u = new URL(String(url || '').trim()); } catch { throw new Error('Paste the full address of the series on the new site.'); }
+    if (!/^https?:$/.test(u.protocol)) throw new Error('The address must start with http(s)://');
+    // same rules as pinning: a known site's series or chapter page, else the path on that host
+    const s = seriesOf(u.href);
+    if (!s || s.slug === '/') throw new Error('That page is not a series or chapter page.');
+    const { siteId, slug } = s;
+    const match = matchUrl(u.href);
+    const pageUrl = match && match.kind === 'series' ? u.href.split('#')[0] : seriesUrl({ siteId, slug }) || undefined;
+    const newId = await store.withLock(async () => {
+      const lib = await store.loadLibrary();
+      const nid = moveEntry(lib, id, { siteId, slug, url: pageUrl });
+      await store.saveLibrary(lib);
+      return nid;
+    });
+    if (getAdapter(siteId)?.list) runReleaseChecks({ ids: [newId], force: true }).catch(() => {});
+    return { id: newId, siteId };
   },
   async remove({ id }) {
     return store.withLock(async () => {

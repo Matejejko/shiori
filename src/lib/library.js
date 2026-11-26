@@ -263,6 +263,37 @@ export function deleteEntry(lib, id, now = Date.now()) {
 }
 
 /** Add a new entry (already in MangaPin shape). Returns it. */
+/**
+ * Move a series to another site (the old one died or changed domain): a new entry with the new
+ * site + slug carries over everything that is yours — progress (as a chapter number), folder,
+ * tags, score, dates, cover, name — and the old id is deleted. The old site's chapter data
+ * (latest/next, site ids) dies with the old id, so no device can sync it back onto the new site.
+ * Returns the new id.
+ */
+export function moveEntry(lib, id, { siteId, slug, url }, now = Date.now()) {
+  const e = lib.entries.get(id);
+  if (!e) throw new Error('no such entry');
+  if (!siteId || !slug) throw new Error('That is not a series page.');
+  const target = seriesKey({ siteId, slug });
+  if (target === seriesKey(e)) throw new Error('The series is already on that site.');
+  for (const o of lib.entries.values()) if (seriesKey(o) === target) throw new Error(`“${o.name}” is already in your library under that site.`);
+  const newIdv = newId(new Set([...lib.entries.keys(), ...lib.tombs.keys()]));
+  const drop = new Set(['latest', 'next', 'rawId', 'titleId', 'url']);
+  let out = {};
+  for (const k of Object.keys(e)) if (!drop.has(k)) Object.defineProperty(out, k, { value: e[k], enumerable: true, writable: true, configurable: true });
+  out = withField(withField(withField(out, 'siteId', siteId), 'slug', slug), 'id', newIdv);
+  if (url) out = withField(out, 'url', url);
+  // chapter numbers carry over; the old site's chapter slug does not
+  if (typeof e.progress?.chap === 'number') out = withField(out, 'progress', { chap: e.progress.chap, ts: now });
+  out = withField(out, 'ts', Math.max(now, (e.ts || 0) + 1));
+  const at = lib.order.indexOf(id);
+  lib.entries.set(newIdv, out);
+  lib.meta.set(newIdv, metaOf(out, { r: out.ts }));
+  lib.order.splice(at < 0 ? lib.order.length : at, 0, newIdv);
+  deleteEntry(lib, id, now);
+  return newIdv;
+}
+
 export function addEntry(lib, entry, now = Date.now()) {
   lib.entries.set(entry.id, entry);
   lib.meta.set(entry.id, metaOf(entry, { r: entry.ts ?? now }));

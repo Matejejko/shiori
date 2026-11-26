@@ -139,6 +139,14 @@ anything still lost in that window is re-uploaded by the next sync because no de
 local data. `If-Match` works correctly (stale ETag → 412, atomic under parallel writers) and is what
 every later write uses.
 
+## Moving a series to another site
+
+Sites go down or change domain. In a series' window: *Edit details* → **Move to another site** → paste the
+series' address on the new site (series or chapter page). The series gets a new id on the new site with
+your progress (as a chapter number — sites sometimes number differently, correct it with *Set* if needed),
+folder, tags, score, dates, name and cover; the old id is deleted, so the dead site's chapter list can't
+sync back. Reading done on the old site on a device that hadn't synced the move yet is not carried over.
+
 ## Sites
 
 | siteId | chapter list (no JavaScript) | notes |

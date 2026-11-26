@@ -276,6 +276,23 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await dav.delete('Shiori').catch(() => {});
   });
 
+  await t.test('moving a series to another site keeps progress and folder, shows the new site', async () => {
+    await app.click('#folderTabs button[data-folder=""]');
+    await app.click('#grid .tile >> nth=0');
+    await app.waitForSelector('dialog#edit[open]');
+    const title = await app.textContent('#edit .ed-title');
+    const progress = await app.textContent('#edit .ed-progress .num');
+    const folder = await app.textContent('#edit .line .chip >> nth=1');
+    await app.click('#edit .edit-toggle');
+    await app.fill('#edit input[aria-label="Address of the series on the new site"]', 'https://manga.example.org/series/moved-here/');
+    await app.click('#edit button:text-is("Move")');
+    await app.waitForFunction(() => document.querySelector('#edit .chip.site')?.textContent === 'manga.example.org');
+    assert.equal(await app.textContent('#edit .ed-title'), title);
+    assert.equal(await app.textContent('#edit .ed-progress .num'), progress);
+    assert.equal(await app.textContent('#edit .line .chip >> nth=1'), folder);
+    await app.keyboard.press('Escape');
+  });
+
   await t.test('no console errors on extension pages', () => {
     assert.deepEqual(consoleErrors.filter((e) => !/net::ERR_|Failed to load resource/.test(e)), []);
   });
