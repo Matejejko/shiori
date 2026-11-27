@@ -68,7 +68,13 @@ resolve even on your LAN.
 - Unknown entry fields survive import → edit → sync → backup.
 - Covers referenced by a MangaPin entry but missing from its `imgs` (MangaPin loses some) are kept as
   references and reported in the import dry run. Covers no entry references are not imported.
-- `folder`, `type` and `tags` stay raw numbers; Library → Labels gives them names (synced).
+- `folder` and `type` are numbers (MangaPin's); Settings → Labels names the folders (synced), types are
+  fixed (Comic, Novel, Anime).
+- `tags` are names — every genre the site lists when you pin, cleaned up: one spelling per tag (case,
+  accents and other languages' names of MangaPin's genres count as the same tag), all-caps/all-lowercase
+  names capitalised. A MangaPin import turns its tag numbers into names (format version 2; older
+  libraries are converted when read). tools/shiori-to-mangapin.html turns names back into MangaPin's
+  numbers and leaves out tags MangaPin's list doesn't have.
 - Export: `Shiori-DDMMYYYY.json` (local date), a Shiori backup: `{format: "shiori-backup", version,
   library: <same as library.json>, covers: {key: base64}}`. Importing it merges like another device that
   synced (edit times and deletes included), or replaces as below. MangaPin can't read it.

@@ -71,13 +71,15 @@ export async function loadPlaywright() {
 }
 
 // ---- comparing libraries with the files they came from ---------------------------------
-// What a library keeps of a MangaPin file: its entries in order + the covers they reference.
+// What a library keeps of a MangaPin file: its entries in order (byte for byte, except that tag
+// numbers become names) + the covers they reference.
+import { normalizeEntry } from '../src/lib/labels.js';
 const sortKeys = (o) => Object.fromEntries(Object.keys(o).sort().map((k) => [k, o[k]]));
 export function mangapinContent(text) {
   const d = JSON.parse(text);
   const imgs = {};
   for (const e of d.entries) if (typeof e.img === 'string' && e.img in (d.imgs || {})) imgs[e.img] = d.imgs[e.img];
-  return JSON.stringify({ entries: d.entries, imgs: sortKeys(imgs) });
+  return JSON.stringify({ entries: d.entries.map(normalizeEntry), imgs: sortKeys(imgs) });
 }
 export function backupContent(text) {
   const d = JSON.parse(text);

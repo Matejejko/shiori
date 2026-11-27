@@ -57,7 +57,7 @@ function scenarios(label, makeDav) {
     // interleaved edits on the same entry + a delete
     const libA = await A.loadLibrary();
     const [x, y] = libA.order;
-    editEntry(libA, x, { tags: [42, 43], folder: 2 });
+    editEntry(libA, x, { tags: ['Tower Climbing', 'Murim'], folder: 2 });
     await A.saveLibrary(libA);
 
     const libB = await B.loadLibrary();
@@ -78,7 +78,7 @@ function scenarios(label, makeDav) {
     assert.equal(libraryFingerprint(fa), libraryFingerprint(fb));
     assert.deepEqual(fa.order, fb.order);
     for (const lib of [fa, fb]) {
-      assert.deepEqual(lib.entries.get(x).tags, [42, 43]);
+      assert.deepEqual(lib.entries.get(x).tags, ['Tower Climbing', 'Murim']);
       assert.equal(lib.entries.get(x).folder, 2);
       assert.equal(lib.entries.get(x).progress.chap, chap);
       assert.equal(lib.entries.has(y), false);

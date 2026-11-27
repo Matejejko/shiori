@@ -71,9 +71,9 @@ test('import refuses a file of the other kind than the one chosen', () => {
 
 test('a backup or library.json from a newer Shiori is refused, not misread', () => {
   const b = JSON.parse(exportBackup(emptyLibrary(), () => undefined));
-  assert.throws(() => planImport(emptyLibrary(), new Set(), JSON.stringify({ ...b, version: 2 }), 'merge'), /newer Shiori/);
-  assert.throws(() => planImport(emptyLibrary(), new Set(), JSON.stringify({ ...b, library: { ...b.library, version: 2 } }), 'merge'), /newer Shiori/);
-  assert.throws(() => fromDoc(JSON.stringify({ ...b.library, version: 2 })), /newer Shiori/);
+  assert.throws(() => planImport(emptyLibrary(), new Set(), JSON.stringify({ ...b, version: 99 }), 'merge'), /newer Shiori/);
+  assert.throws(() => planImport(emptyLibrary(), new Set(), JSON.stringify({ ...b, library: { ...b.library, version: 99 } }), 'merge'), /newer Shiori/);
+  assert.throws(() => fromDoc(JSON.stringify({ ...b.library, version: 99 })), /newer Shiori/);
 });
 
 for (const fx of exportFixtures()) {

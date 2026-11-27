@@ -36,10 +36,17 @@
     <button id="save" type="button" hidden>Download MangaPin file</button>
   </div>
   <p class="muted">Kept: series, reading progress, folders, tags, covers and every other MangaPin field. Not kept (MangaPin has no place for it):
-    Shiori's sync data (edit times, deleted series) and your folder/tag names. A server snapshot has no covers inside; use a backup for those.</p>
+    Shiori's sync data (edit times, deleted series), your folder names, and tags MangaPin's tag list doesn't have. A server snapshot has no covers inside; use a backup for those.</p>
 </main>
 <script>
 // <convert> (pure; test/tools.test.mjs runs this block)
+// MangaPin's tag table (a copy of src/lib/labels.js MANGAPIN_TAGS; a test keeps them equal)
+const MANGAPIN_TAGS = { 1: "Manga", 2: "Manhua", 3: "Manhwa", 4: "Comic", 5: "Novel", 6: "Anime", 7: "Donghua", 11: "Shounen", 12: "Shoujo", 13: "Seinen", 14: "Josei", 15: "Yaoi", 16: "Yuri", 20: "4 Koma", 21: "Adaptation", 22: "Anthology", 23: "Award Winning", 24: "Doujinshi", 25: "Fan Colored", 26: "Full Color", 27: "Long Strip", 28: "Official Colored", 29: "Oneshot", 30: "Self Published", 31: "Web Comic", 40: "Adult", 41: "Bloody", 42: "Ecchi", 43: "Erotica", 44: "Gore", 45: "Hentai", 46: "Mature", 47: "Smut", 49: "Violence", 60: "Action", 61: "Adventure", 62: "Age Gap", 63: "Aliens", 64: "Animals", 65: "Beasts", 66: "Bodyswap", 67: "Boys' Love", 68: "Cheating", 69: "Childhood Friends", 70: "Comedy", 71: "Cooking", 72: "Crime", 73: "Cross Dressing", 74: "Crossdressing", 75: "Cultivation", 76: "Delinquents", 77: "Demons", 78: "Detective", 79: "Drama", 80: "Dungeons", 81: "Fantasy", 82: "Fetish", 83: "Food", 84: "Game", 85: "Genderswap", 86: "Ghosts", 87: "Girls' Love", 88: "Gyaru", 89: "Harem", 90: "Historical", 91: "Horror", 92: "Incest", 93: "Isekai", 94: "Loli", 95: "Mafia", 96: "Magic", 97: "Magical Girls", 98: "Martial Arts", 99: "Mecha", 100: "Medical", 101: "Military", 102: "Modern Setting", 103: "Monster Girls", 104: "Monsters", 105: "Murim", 106: "Music", 107: "Mystery", 108: "Ninja", 109: "Office Workers", 110: "Overpowered", 111: "Parody", 112: "Philosophical", 113: "Police", 114: "Post Apocalyptic", 115: "Psychological", 116: "Reincarnation", 117: "Revenge", 118: "Reverse Harem", 119: "Romance", 120: "Royalty", 121: "Samurai", 122: "School Life", 123: "Sci Fi", 124: "Science Fiction", 125: "Shota", 126: "Slice of Life", 127: "Sports", 128: "Superhero", 129: "Supernatural", 130: "Survival", 131: "System", 132: "Thriller", 133: "Time Travel", 134: "Traditional Games", 135: "Tragedy", 136: "Transmigration", 137: "Vampires", 138: "Video Games", 139: "Villain", 140: "Villainess", 141: "Virtual Reality", 142: "Webtoon", 143: "Wuxia", 144: "Yakuzas", 145: "Zombies" };
+const tagKey = (s) => String(s).toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^\p{L}\p{N}]/gu, '');
+const TAG_IDS = new Map();
+for (const [id, n] of Object.entries(MANGAPIN_TAGS)) if (!TAG_IDS.has(tagKey(n))) TAG_IDS.set(tagKey(n), Number(id));
+TAG_IDS.set(tagKey('Science Fiction'), 124);
+
 function toMangaPin(text) {
   let d;
   try { d = JSON.parse(text); } catch { throw new Error('This file is not JSON.'); }
@@ -54,8 +61,19 @@ function toMangaPin(text) {
     throw new Error('This is not a Shiori backup. (Is it already a MangaPin export?)');
   }
   if (!lib || lib.format !== 'shiori-library' || !Array.isArray(lib.entries)) throw new Error('The library in this file is damaged.');
-  if (!(typeof lib.version === 'number' && lib.version <= 1)) throw new Error('This library was made by a newer Shiori. Get the newest version of this converter.');
-  const entries = lib.entries.filter((e) => e && typeof e === 'object' && typeof e.id === 'string');
+  if (!(typeof lib.version === 'number' && lib.version <= 2)) throw new Error('This library was made by a newer Shiori. Get the newest version of this converter.');
+  // Shiori stores tags as names; MangaPin only knows its own numbered tags
+  let droppedTags = 0;
+  const entries = lib.entries.filter((e) => e && typeof e === 'object' && typeof e.id === 'string').map((e) => {
+    if (!Array.isArray(e.tags) || e.tags.every((t) => typeof t === 'number')) return e;
+    const ids = [];
+    for (const t of e.tags) {
+      const m = typeof t === 'string' && /^Tag (\d+)$/.exec(t);
+      const id = typeof t === 'number' ? t : m ? Number(m[1]) : TAG_IDS.get(tagKey(t));
+      if (id === undefined) droppedTags++; else if (!ids.includes(id)) ids.push(id);
+    }
+    return Object.fromEntries(Object.entries(e).map(([k, v]) => [k, k === 'tags' ? ids : v]));
+  });
   const imgs = {}; // MangaPin keeps covers in first-reference order
   const missing = new Set();
   for (const e of entries) {
@@ -63,7 +81,7 @@ function toMangaPin(text) {
     if (typeof k !== 'string' || !k.startsWith('local:') || Object.prototype.hasOwnProperty.call(imgs, k)) continue;
     if (typeof covers[k] === 'string') imgs[k] = covers[k]; else missing.add(k);
   }
-  return { text: JSON.stringify({ version: 1, entries, imgs }), entries: entries.length, covers: Object.keys(imgs).length, missingCovers: missing.size };
+  return { text: JSON.stringify({ version: 1, entries, imgs }), entries: entries.length, covers: Object.keys(imgs).length, missingCovers: missing.size, droppedTags };
 }
 // </convert>
 
@@ -79,7 +97,8 @@ async function handle(file) {
   if (!file) return;
   try {
     result = toMangaPin(await file.text());
-    const extra = result.missingCovers ? ` ${result.missingCovers} cover(s) are not in this file; those series import without a cover.` : '';
+    let extra = result.missingCovers ? ` ${result.missingCovers} cover(s) are not in this file; those series import without a cover.` : '';
+    if (result.droppedTags) extra += ` ${result.droppedTags} tag(s) are not in MangaPin's tag list and are left out.`;
     show(`Ready: ${result.entries} series, ${result.covers} covers.${extra}`, 'ok');
     $('save').hidden = false;
   } catch (e) { show(e.message, 'err'); }

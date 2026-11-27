@@ -146,18 +146,35 @@ test('the app token is never sent over plain http to another machine', () => {
   assert.ok(new WebDav({ url: 'http://127.0.0.1:9200/remote.php/webdav/', user: 'u', token: 't' }));
 });
 
-test('built-in names for folders and MangaPin tags; your own labels win', async () => {
+test('built-in folder names; your own folder names win', async () => {
   const { labelName } = await import('../src/ui/dom.js');
   assert.equal(labelName(null, 'folder', 2), 'Hiatus');
-  assert.equal(labelName(null, 'tag', 81), 'Fantasy');
-  assert.equal(labelName({ tag: { 81: { name: 'Fantasy!', ts: 1 } } }, 'tag', 81), 'Fantasy!');
-  assert.equal(labelName({ tag: { 81: { name: '', ts: 1 } } }, 'tag', 81), 'Fantasy'); // removed label -> default again
-  assert.equal(labelName(null, 'tag', 99999), null);
+  assert.equal(labelName({ folder: { 2: { name: 'On break', ts: 1 } } }, 'folder', 2), 'On break');
+  assert.equal(labelName({ folder: { 2: { name: '', ts: 1 } } }, 'folder', 2), 'Hiatus'); // removed label -> default again
+  assert.equal(labelName(null, 'type', 2), 'Novel');
 });
 
-test('genre names scraped on pin map to MangaPin tag ids (case/punctuation/alt names)', async () => {
-  const { tagIdsFromNames } = await import('../src/lib/labels.js');
-  assert.deepEqual(tagIdsFromNames(['Action', ' fantasy ', 'Slice of Life', 'shônen', 'Not A Genre', 'ACTION']), [60, 81, 126, 11]);
+test('tags are names: every genre a site lists is kept, cleaned up, one spelling per tag', async () => {
+  const { normalizeTags, MANGAPIN_TAGS } = await import('../src/lib/labels.js');
+  assert.deepEqual(
+    normalizeTags(['Action', ' fantasy ', 'Slice of Life', 'shônen', 'Tower Climbing', 'ACTION', 'acción', 'sci-fi', 'Regression', 'love', '', '42', 60, 999]),
+    ['Action', 'Fantasy', 'Slice of Life', 'Shounen', 'Tower Climbing', 'Science Fiction', 'Regression', 'Love', 'Tag 999']);
+  assert.equal(MANGAPIN_TAGS[20], '4 Koma'); assert.equal(MANGAPIN_TAGS[30], 'Self Published');
+});
+
+test('older data with MangaPin tag numbers reads as names everywhere (storage, server, import)', async () => {
+  const { normalizeEntry } = await import('../src/lib/labels.js');
+  const { fromDoc } = await import('../src/lib/sync.js');
+  const e = { siteId: 'arena', slug: 's', name: 'n', cLang: 'en', folder: 1, tags: [81, 60], ts: 1, createTs: 1, id: 'OldTagsAA1' };
+  assert.deepEqual(normalizeEntry(e).tags, ['Fantasy', 'Action']);
+  assert.deepEqual(Object.keys(normalizeEntry(e)), Object.keys(e)); // field order kept
+  const store = new Store(new MemoryArea());
+  await store.area.set({ 'e:OldTagsAA1': JSON.stringify(e), lib: { order: ['OldTagsAA1'], meta: {}, tombs: {}, labels: { folder: {}, tag: { 81: { name: 'x', ts: 1 } } } } });
+  const lib = await store.loadLibrary();
+  assert.deepEqual(lib.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action']);
+  assert.deepEqual(lib.labels, { folder: {} });
+  const doc = fromDoc(JSON.stringify({ format: 'shiori-library', version: 1, entries: [e], labels: { folder: {}, type: {}, tag: {} } }));
+  assert.deepEqual(doc.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action']);
 });
 
 test('reading before pinning: chapter and series pages map to one series; forward only; max 100, 30 days', async () => {
@@ -301,7 +318,7 @@ test('moving a series to another site keeps what is yours, drops the dead site, 
   const id = moveEntry(la, 'OldOldOld1', { siteId: 'vortex', slug: 'solo-max', url: 'https://vortexscans.org/series/solo-max' }, 1000);
   await a.saveLibrary(la);
   const e = la.entries.get(id);
-  assert.deepEqual([e.siteId, e.slug, e.name, e.folder, e.tags, e.score, e.progress.chap, e.createTs, e.img], ['vortex', 'solo-max', 'Solo Max', 4, [3, 7], 9, 80, 1, 'local:3:00000000000000000000000000000000.webp']);
+  assert.deepEqual([e.siteId, e.slug, e.name, e.folder, e.tags, e.score, e.progress.chap, e.createTs, e.img], ['vortex', 'solo-max', 'Solo Max', 4, ['Manhwa', 'Donghua'], 9, 80, 1, 'local:3:00000000000000000000000000000000.webp']);
   assert.equal(e.latest, undefined); assert.equal(e.next, undefined); assert.equal(e.progress.slug, undefined);
   assert.equal(la.entries.has('OldOldOld1'), false);
   assert.equal(la.order[0], id);

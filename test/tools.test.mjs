@@ -19,12 +19,26 @@ for (const fx of exportFixtures()) {
     const backup = exportBackup(plan.lib, (k) => plan.covers.get(k));
     const out = toMangaPin(backup);
     assert.equal(mangapinContent(out.text), mangapinContent(fx.text));
+    // tag names go back to MangaPin's numbers: the entries are byte for byte the original ones
+    assert.equal(JSON.stringify(JSON.parse(out.text).entries), JSON.stringify(JSON.parse(fx.text).entries.filter((e, i, all) => all.findIndex((x) => x.id === e.id) === i)));
+    assert.equal(out.droppedTags, 0);
     assert.equal(out.entries, parseExport(fx.text).entries.length);
     // and MangaPin's own shape: version 1, entries, imgs — which Shiori reads back as MangaPin
     assert.deepEqual(Object.keys(JSON.parse(out.text)), ['version', 'entries', 'imgs']);
     assert.equal(planImport(emptyLibrary(), new Set(), out.text, 'replace', 1000, 'mangapin').lib.entries.size, plan.lib.entries.size);
   });
 }
+
+test('the converter carries the same MangaPin tag table as Shiori; tags MangaPin lacks are left out and counted', async () => {
+  const { MANGAPIN_TAGS } = await import('../src/lib/labels.js');
+  const copy = new Function(`${block}; return MANGAPIN_TAGS;`)();
+  assert.deepEqual(copy, MANGAPIN_TAGS);
+  const b = JSON.parse(exportBackup(emptyLibrary(), () => undefined));
+  b.library.entries = [{ siteId: 's', slug: 'x', name: 'n', folder: 1, tags: ['Action', 'Tower Climbing', 'Tag 999', 'Science Fiction'], ts: 1, id: 'AAAAAAAAAA' }];
+  const out = toMangaPin(JSON.stringify(b));
+  assert.deepEqual(JSON.parse(out.text).entries[0].tags, [60, 999, 124]);
+  assert.equal(out.droppedTags, 1);
+});
 
 test('a server snapshot converts too (covers reported missing), other files are refused', () => {
   const fx = exportFixtures()[0];

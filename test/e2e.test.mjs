@@ -75,10 +75,16 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     // tag filter: tick two tags -> only series that have both
     const want = parseExport(fixture.text).entries.filter((x) => [60, 81].every((t) => (x.obj.tags || []).includes(t))).length;
     await app.click('#fTag summary');
-    await app.check('#fTag input[value="60"]');
-    await app.check('#fTag input[value="81"]');
+    await app.check('#fTag input[value="Action"]'); // tags are names (MangaPin's 60 and 81)
+    await app.check('#fTag input[value="Fantasy"]');
     await app.waitForFunction((n) => document.querySelectorAll('#grid .tile').length === n, want);
     assert.match(await app.textContent('#fTag summary'), /Action, Fantasy|Fantasy, Action/);
+    // the tag filter closes like the selects next to it: a click elsewhere, or Escape
+    await app.click('#count');
+    assert.equal(await app.$eval('#fTag', (d) => d.open), false);
+    await app.click('#fTag summary');
+    await app.keyboard.press('Escape');
+    assert.equal(await app.$eval('#fTag', (d) => d.open), false);
     // series window: opens on a tile, closes on a click outside it
     await app.click('#grid .tile >> nth=0');
     await app.waitForSelector('dialog#edit[open]');
@@ -95,8 +101,9 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.waitForFunction(() => !document.querySelector('dialog#confirm').open);
     await app.keyboard.press('Escape');
     assert.equal(await app.textContent('#count'), countBefore);
-    await app.uncheck('#fTag input[value="60"]');
-    await app.uncheck('#fTag input[value="81"]');
+    await app.click('#fTag summary');
+    await app.uncheck('#fTag input[value="Action"]');
+    await app.uncheck('#fTag input[value="Fantasy"]');
     await app.click('#fTag summary');
   });
 
@@ -181,7 +188,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.equal(createHash('md5').update(Buffer.from(cover.b64, 'base64')).digest('hex'), md5hex);
     assert.equal(entry.name, 'A Portrait of Pride'); // scraped from the page's h1
     assert.match(entry.id, /^[A-Za-z0-9]{10}$/);
-    assert.deepEqual(entry.tags, [60, 81]); // Action, Fantasy — menu genres ignored
+    assert.deepEqual(entry.tags, ['Action', 'Fantasy', 'Not a genre']); // every genre of the series, not only MangaPin's; menu genres ignored
 
     // the tab-update event reaches the tracker asynchronously: wait for it, up to 5 s
     const entryWhen = async (pred) => {
@@ -214,7 +221,8 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const r = await sw.evaluate((id) => self.shiori.handlers.pin({ tabId: id }), cxTab);
     const pinned = await sw.evaluate(async (id) => self.shiori.store.getEntry(id), r.id);
     assert.equal(pinned.siteId, 'comix');
-    for (const t of [70, 119, 14, 27, 26]) assert.ok(pinned.tags.includes(t), `tag ${t} in ${pinned.tags}`); // Comedy Romance Josei Long Strip Full Color
+    for (const t of ['Comedy', 'Romance', 'Josei', 'Long Strip', 'Full Color', 'Office Workers']) assert.ok(pinned.tags.includes(t), `tag ${t} in ${pinned.tags}`);
+    assert.ok(pinned.tags.includes('Glasses-Wearing Female Lead'), 'tags MangaPin does not know are kept too');
     await cx.close();
 
     // read chapter 23 of a series that is not pinned, then pin it from its series page: progress = 23

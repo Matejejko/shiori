@@ -6,12 +6,14 @@ import { coverKeyToFile, coverFileToKey, parseCoverKey, verifyCover, referencedI
 import { md5 } from './md5.js';
 import { b64ToBytes, bytesToB64 } from './base64.js';
 import { DavError } from './webdav.js';
+import { normalizeEntry } from './labels.js';
 
 export const REMOTE_DIR = 'Shiori';
 const FORMAT = 'shiori-library';
 // Bump when library.json changes shape (and teach libFromDoc the old one). A device that meets a
 // newer version stops syncing instead of rewriting the file in a shape it doesn't understand.
-export const LIB_VERSION = 1;
+// 2: tags are names (1: MangaPin tag numbers, converted when read); labels are folder names only.
+export const LIB_VERSION = 2;
 const pathsFor = (dir = REMOTE_DIR) => ({ DIR: dir, DOC: `${dir}/library.json`, COVERS: `${dir}/covers`, BACKUPS: `${dir}/backups` });
 // Server-side snapshots of library.json (the undo for a final delete or a wrong replace import):
 // the server's copy is saved before the first overwrite of each day and before the push that
@@ -58,13 +60,13 @@ export function libFromDoc(d, what = 'library') {
   for (const e of d.entries) {
     if (!e || typeof e.id !== 'string') continue;
     if (!entries.has(e.id)) order.push(e.id);
-    entries.set(e.id, e);
+    entries.set(e.id, normalizeEntry(e));
     if (d.meta && d.meta[e.id]) meta.set(e.id, d.meta[e.id]);
   }
   return {
     order, entries, meta,
     tombs: new Map(Object.entries(d.tombs || {}).filter(([, t]) => typeof t === 'number')),
-    labels: d.labels || emptyLabels(),
+    labels: { folder: d.labels && typeof d.labels.folder === 'object' && d.labels.folder ? d.labels.folder : {} },
     days: d.days && typeof d.days === 'object' && !Array.isArray(d.days) ? d.days : {},
     seen: d.seen && typeof d.seen === 'object' && !Array.isArray(d.seen) ? d.seen : {},
     layoutTs: typeof d.layoutTs === 'number' ? d.layoutTs : 0,

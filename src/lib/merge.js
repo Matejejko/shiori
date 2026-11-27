@@ -199,7 +199,9 @@ export function mergeEntry(a, aMeta, b, bMeta) {
 //     tombs: Map<id, number>, labels: {folder:{}, type:{}, tag:{}} }
 // Labels: kind -> key -> { name: string, ts: number }
 
-export function emptyLabels() { return { folder: {}, type: {}, tag: {} }; }
+// Labels: folder names only ({ folder: { '<number>': {name, ts} } }); older libraries also had
+// type and tag names, which are no longer used (tags are names themselves).
+export function emptyLabels() { return { folder: {} }; }
 
 /**
  * Series read but not pinned ({ seriesKey: {chap, slug?, ts} }, see tracker.noteSeen), synced so
@@ -250,7 +252,7 @@ export function mergeDays(a, b) {
 
 export function mergeLabels(a = emptyLabels(), b = emptyLabels()) {
   const out = emptyLabels();
-  for (const kind of new Set([...Object.keys(a || {}), ...Object.keys(b || {})])) {
+  for (const kind of ['folder']) {
     const x = (a && a[kind]) || {}, y = (b && b[kind]) || {};
     const o = {};
     for (const k of [...new Set([...Object.keys(x), ...Object.keys(y)])].sort()) {

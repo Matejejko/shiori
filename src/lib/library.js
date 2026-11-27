@@ -3,6 +3,7 @@
 import { parseExport, referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
 import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels, seriesKey } from './merge.js';
 import { docOf, libFromDoc } from './sync.js';
+import { normalizeEntry } from './labels.js';
 
 export function emptyLibrary() {
   return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), days: {}, seen: {}, layoutTs: 0 };
@@ -37,7 +38,8 @@ function readImportFile(text) {
 /** Library built from a parsed MangaPin export (duplicate ids inside the file are merged). */
 function libFromParsed(parsed, metaFor) {
   const lib = emptyLibrary();
-  for (const { id, obj } of parsed.entries) {
+  for (const { id, obj: raw } of parsed.entries) {
+    const obj = normalizeEntry(raw); // MangaPin tag numbers -> names
     const prev = lib.entries.get(id);
     const m = metaFor(obj);
     if (prev) {
@@ -211,7 +213,7 @@ export function formPatch(entry, initial, current) {
   const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
   for (const k of Object.keys(current)) {
     if (k === 'tags') {
-      const was = [...initial.tags].sort((a, b) => a - b), now = [...new Set(current.tags)].sort((a, b) => a - b);
+      const was = [...initial.tags].sort(), now = [...new Set(current.tags)].sort();
       if (same(was, now)) continue;
       const keep = new Set(now);
       const own = (Array.isArray(entry.tags) ? entry.tags : []).filter((t) => keep.has(t));

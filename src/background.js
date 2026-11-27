@@ -3,7 +3,7 @@
 
 import { Store } from './lib/store.js';
 import { WebDav, findDavRoot } from './lib/webdav.js';
-import { tagIdsFromNames } from './lib/labels.js';
+import { normalizeTags } from './lib/labels.js';
 import { syncOnce } from './lib/sync.js';
 import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry, countRead } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
@@ -291,7 +291,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
       name: cleanName(nameOverride || scraped.h1 || scraped.ogTitle || scraped.title, new URL(tab.url).hostname) || slug,
       img: cover ? cover.key : undefined,
       progress: readSoFar ? (readSoFar.slug ? { chap: readSoFar.chap, slug: readSoFar.slug, ts: now } : { chap: readSoFar.chap, ts: now }) : undefined,
-      cLang: 'en', folder: Number(folder) || 1, tags: tagIdsFromNames(scraped.genres || []), ts: now, createTs: now, id: newId(new Set([...lib.entries.keys(), ...lib.tombs.keys()])) /* a deleted id stays deleted */,
+      cLang: 'en', folder: Number(folder) || 1, tags: normalizeTags(scraped.genres || []), /* every genre the site lists */ ts: now, createTs: now, id: newId(new Set([...lib.entries.keys(), ...lib.tombs.keys()])) /* a deleted id stays deleted */,
     };
     for (const k of ENTRY_FIELD_ORDER) if (fields[k] !== undefined) e[k] = fields[k];
     if (cover) await store.putCovers([[cover.key, cover.b64]]);
@@ -339,7 +339,7 @@ const handlers = {
         if (k === 'name' && typeof v === 'string') clean.name = v.slice(0, 300);
         else if (k === 'url') clean.url = v ? String(v) : undefined;
         else if (k === 'folder' || k === 'type' || k === 'score') clean[k] = v === '' || v === null || v === undefined ? undefined : Number(v);
-        else if (k === 'tags' && Array.isArray(v)) clean.tags = v.map(Number).filter(Number.isFinite);
+        else if (k === 'tags' && Array.isArray(v)) clean.tags = normalizeTags(v);
         else if (k === 'startTs' || k === 'endTs') clean[k] = v ? Number(v) : undefined;
       }
       if (clean.folder === undefined && 'folder' in clean) delete clean.folder; // folder is required by MangaPin
@@ -466,8 +466,8 @@ const handlers = {
     return store.withLock(async () => {
       const lib = await store.loadLibrary();
       const now = Date.now();
-      const next = structuredClone(lib.labels || { folder: {}, type: {}, tag: {} });
-      for (const kind of ['folder', 'type', 'tag']) {
+      const next = structuredClone(lib.labels || { folder: {} });
+      for (const kind of ['folder']) {
         const want = (labels && labels[kind]) || {}, was = (base && base[kind]) || {};
         next[kind] ||= {};
         // only what the user changed in the form; untouched rows keep whatever synced meanwhile

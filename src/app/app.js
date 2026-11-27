@@ -1,6 +1,6 @@
 import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
 import { formPatch } from '../lib/library.js';
-import { DEFAULT_LABELS } from '../lib/labels.js';
+import { DEFAULT_LABELS, MANGAPIN_TAGS, tagKey } from '../lib/labels.js';
 import { computeStats, computeReading, MIN_PER_CHAPTER } from '../lib/stats.js';
 
 const $ = (id) => document.getElementById(id);
@@ -68,14 +68,32 @@ function renderSyncPill() {
 
 const distinct = (arr) => [...new Set(arr)].sort((a, b) => (typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b))));
 function knownKeys(kind, withDefaults = false) {
+  if (kind === 'tag') { // names; withDefaults adds the common genres so they can be picked
+    const byKey = new Map();
+    for (const t of [...state.lib.entries.flatMap((e) => (Array.isArray(e.tags) ? e.tags : [])), ...(withDefaults ? Object.values(MANGAPIN_TAGS) : [])]) {
+      if (typeof t === 'string' && !byKey.has(tagKey(t))) byKey.set(tagKey(t), t);
+    }
+    return [...byKey.values()].sort((a, b) => a.localeCompare(b));
+  }
   const fromEntries = state.lib.entries.flatMap((e) => (kind === 'tag' ? (Array.isArray(e.tags) ? e.tags : []) : e[kind] !== undefined ? [e[kind]] : []));
-  const fromLabels = Object.entries(state.lib.labels?.[kind] || {}).filter(([, v]) => v && v.name).map(([k]) => Number(k));
+  const fromLabels = Object.entries(kind === 'folder' ? state.lib.labels?.folder || {} : {}).filter(([, v]) => v && v.name).map(([k]) => Number(k));
   const base = kind === 'folder' || withDefaults ? Object.keys(DEFAULT_LABELS[kind]).map(Number) : [];
   return distinct([...base, ...fromEntries, ...fromLabels].filter((x) => typeof x === 'number' && Number.isFinite(x)));
 }
-const labelFor = (kind, v) => labelName(state.lib.labels, kind, v) || (kind === 'folder' ? `Folder ${v}` : kind === 'type' ? `Type ${v}` : `Tag ${v}`);
+const labelFor = (kind, v) => (kind === 'tag' ? String(v) : labelName(state.lib.labels, kind, v) || (kind === 'folder' ? `Folder ${v}` : `Type ${v}`));
 
-const pickedTags = (el) => [...el.querySelectorAll('input:checked')].map((i) => Number(i.value));
+const pickedTags = (el) => [...el.querySelectorAll('input:checked')].map((i) => i.value);
+// tag pickers behave like the selects next to them: a click elsewhere or Escape closes them
+document.addEventListener('click', (ev) => {
+  for (const d of document.querySelectorAll('details.tagpick[open]')) if (!d.contains(ev.target)) d.open = false;
+});
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  for (const d of document.querySelectorAll('details.tagpick[open]')) {
+    d.open = false; d.querySelector('summary').focus();
+    ev.preventDefault(); // close the picker, not the series window around it
+  }
+});
 /** Checkbox list of tags inside a <details> (sorted by name); fires 'input' on change. */
 function fillTagPicker(el, keys, selected, empty) {
   const opts = el.querySelector('.opts');
@@ -190,7 +208,7 @@ function openEditor(id) {
     folder: h('select', {}, knownKeys('folder').map((v) => h('option', { value: v, text: labelFor('folder', v), selected: v === e.folder }))),
     type: h('select', {}, h('option', { value: '', text: '(none)' }), knownKeys('type').map((v) => h('option', { value: v, text: labelFor('type', v), selected: v === e.type }))),
     tags: h('details', { class: 'tagpick' }, h('summary'), h('div', { class: 'opts' })),
-    newTag: h('input', { type: 'number', step: 1, placeholder: 'new tag #' }),
+    newTag: h('input', { type: 'text', placeholder: 'e.g. Tower Climbing', attrs: { maxlength: 40 } }),
     score: h('input', { type: 'number', step: 'any', value: numOrEmpty(e.score) }),
     startTs: h('input', { type: 'date', value: toDateInput(e.startTs) }),
     endTs: h('input', { type: 'date', value: toDateInput(e.endTs) }),
@@ -202,7 +220,7 @@ function openEditor(id) {
   const readForm = () => ({
     name: f.name.value.trim(), url: f.url.value.trim() || undefined, folder: Number(f.folder.value),
     type: f.type.value === '' ? undefined : Number(f.type.value),
-    tags: pickedTags(f.tags).concat(f.newTag.value !== '' ? [Number(f.newTag.value)] : []),
+    tags: pickedTags(f.tags).concat(f.newTag.value.trim() ? [f.newTag.value.trim()] : []),
     score: f.score.value === '' ? undefined : Number(f.score.value),
     startTs: f.startTs.value === toDateInput(e.startTs) ? e.startTs : fromDateInput(f.startTs.value),
     endTs: f.endTs.value === toDateInput(e.endTs) ? e.endTs : fromDateInput(f.endTs.value),
@@ -266,7 +284,7 @@ function openEditor(id) {
         h('label', {}, 'Folder', f.folder),
         h('label', {}, 'Type', f.type),
         h('div', { class: 'full' }, h('div', { class: 'lbl', text: 'Tags' }), f.tags),
-        h('label', {}, 'Add tag number', f.newTag)),
+        h('label', {}, 'Add a tag', f.newTag)),
       h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Series' }),
         h('label', { class: 'full' }, 'Name', f.name),
         h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url)),
@@ -539,7 +557,7 @@ function labelRow(kind, key, name) {
 let labelsBase = { folder: {}, type: {}, tag: {} }; // names as rendered: only changes are saved
 function renderLabels() {
   if (!state.lib) return;
-  labelsBase = { folder: {}, type: {}, tag: {} };
+  labelsBase = { folder: {} };
   for (const card of document.querySelectorAll('.labels .card')) {
     const kind = card.dataset.kind;
     const rows = clear(card.querySelector('.rows'));
@@ -552,7 +570,7 @@ function renderLabels() {
   }
 }
 $('saveLabels').addEventListener('click', async () => {
-  const labels = { folder: {}, type: {}, tag: {} };
+  const labels = { folder: {} };
   for (const card of document.querySelectorAll('.labels .card')) {
     for (const row of card.querySelectorAll('.rows .row')) {
       const [k, n] = row.querySelectorAll('input');

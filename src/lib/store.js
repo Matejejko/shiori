@@ -12,6 +12,7 @@
 //   dseq        local change counter (bumped by every non-silent library save)
 
 import { emptyLabels } from './merge.js';
+import { normalizeEntry } from './labels.js';
 
 const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), days: {}, seen: undefined, layoutTs: 0 });
 
@@ -59,7 +60,7 @@ export class Store {
     for (const id of idx.order) {
       const raw = got['e:' + id];
       if (typeof raw !== 'string') continue;
-      entries.set(id, JSON.parse(raw));
+      entries.set(id, normalizeEntry(JSON.parse(raw))); // older data: MangaPin tag numbers -> names
       order.push(id);
     }
     return {
@@ -67,7 +68,7 @@ export class Store {
       entries,
       meta: new Map(Object.entries(idx.meta || {})),
       tombs: new Map(Object.entries(idx.tombs || {})),
-      labels: idx.labels || emptyLabels(),
+      labels: { folder: (idx.labels && idx.labels.folder) || {} },
       days: idx.days || {},
       // read-before-pin memory: synced since it moved into the library; older versions kept it under 'seen'
       seen: idx.seen || (await this.area.get('seen')).seen || {},
