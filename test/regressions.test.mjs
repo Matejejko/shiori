@@ -142,7 +142,7 @@ test('a real page with Cloudflare\'s normal script is not mistaken for a challen
 });
 
 test('the app token is never sent over plain http to another machine', () => {
-  assert.throws(() => new WebDav({ url: 'http://192.168.0.101/remote.php/webdav/', user: 'u', token: 't' }), /https/);
+  assert.throws(() => new WebDav({ url: 'http://192.168.1.10/remote.php/webdav/', user: 'u', token: 't' }), /https/);
   assert.ok(new WebDav({ url: 'http://127.0.0.1:9200/remote.php/webdav/', user: 'u', token: 't' }));
 });
 

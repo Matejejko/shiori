@@ -24,10 +24,10 @@ can't be fetched, and such series are pinned without a cover.
 ## Set up sync
 
 1. In OpenCloud: Settings → App Tokens (or `opencloud auth-app create --user-name <you> --expiration 8760h`).
-2. Library → Settings: WebDAV URL of your personal space (the bare server address works too: *Test
-   connection* / *Save* find `/remote.php/webdav/` or `/dav/files/<user>/`), e.g.
-   `https://oc.192.168.0.101.sslip.io/remote.php/webdav/` (also valid: `/dav/files/<user>/`),
-   username, app token → *Test connection* → *Save*.
+2. Library → ☰ → Sync settings: the WebDAV URL of your personal space, e.g.
+   `https://cloud.example.com/remote.php/webdav/` (also valid: `/dav/files/<user>/`; the bare server
+   address works too — *Test connection* / *Save* find the folder), username, app token →
+   *Test connection* → *Save*. Nextcloud and other WebDAV servers should work; only OpenCloud is tested.
 3. Sync runs 5 s after every change and every 15 min; the library lives in `/Shiori/`:
    - `library.json` — entries + tombstones + labels + merge metadata (`format: shiori-library`, `version`).
      A device that meets a newer `version` stops syncing and asks to be updated instead of rewriting it.
@@ -40,26 +40,24 @@ can't be fetched, and such series are pinned without a cover.
    Each device drops covers that no series uses any more (deleted series); the server keeps them all.
 
 The token is stored only in `chrome.storage.local` (`secret`), never in synced data, never logged, only
-sent over https (plain http is refused except to `localhost`), and *Test connection* never sends the saved
-token to a different server than the saved one.
+sent over https (plain http is refused except to `localhost`), and never sent to a different server than
+the one it was saved for (*Test connection* and *Save* both refuse; enter the new server's token).
 
-### Certificates (solved for this setup with an own CA)
+### Certificates
 
-`oc.192.168.0.101.sslip.io` is served with **Traefik's default self-signed certificate**. Browser
-extensions cannot bypass certificate errors (there is no "accept the risk" for `fetch`), so every
-request fails with a network/TLS error until the browser trusts the certificate. Worse, Traefik
-*generates a new default certificate on every restart*, so trusting it once is not enough.
-Options (all on the server side, which this project does not touch):
+Browser extensions cannot bypass certificate errors (there is no "accept the risk" for `fetch`), so a
+server with a self-signed certificate fails with a network/TLS error until the browser trusts it. Options
+(all on the server side):
 
-- **Proper certificate** for a name you control (cert-manager + Let's Encrypt DNS-01 works for a
-  private IP). Best: trusted by every browser and OS, no per-machine setup.
-- **Own CA** (mkcert, or a cert-manager CA issuer) and install the CA on the MacBook (Keychain) and the
-  CachyOS desktop (`trust anchor`). Firefox needs `security.enterprise_roots.enabled=true` or its own import.
-- **Tailscale HTTPS** (`*.ts.net` certificate) — requires OpenCloud's `OC_URL` to use that name.
+- **A proper certificate** for a name you control (e.g. Let's Encrypt with a DNS-01 challenge, which also
+  works for a private IP). Trusted everywhere, no per-device setup.
+- **Your own CA** (e.g. mkcert) installed on every device (macOS Keychain, `trust anchor` on Linux).
+  Firefox needs `security.enterprise_roots.enabled=true` or its own import.
+- **Tailscale HTTPS** (`*.ts.net` certificate), with the server configured to use that name.
 
-Also note: `*.sslip.io` needs public DNS. With no internet (or a resolver with DNS-rebinding
-protection that drops private answers, e.g. some routers/Pi-hole/NextDNS setups) the name does not
-resolve even on your LAN.
+Reverse proxies such as Traefik serve a self-signed *default* certificate that changes on every restart:
+trusting it once is not enough. Wildcard-DNS names like `*.sslip.io` need public DNS; resolvers with
+DNS-rebinding protection drop their private answers, even on your LAN.
 
 ## How data is kept
 
