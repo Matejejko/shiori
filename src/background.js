@@ -105,11 +105,14 @@ function runSync(reason) {
       broadcast({ type: 'sync', running: false });
       updateBadge();
     }
-  })().finally(async () => {
+  })().then(async (r) => {
     syncRunning = null;
-    // edits made while this sync ran were not in it: don't leave them for the 15-min alarm
-    if ((await store.getSyncState()).dirty && (await davFromSettings())) scheduleSync();
-  });
+    // edits made while a successful sync ran were not in it: don't leave them for the 15-min alarm.
+    // A failed or skipped sync does not retry by itself (a wrong token would knock every 5 s, and
+    // servers lock out IPs for that); the alarm and your next change try again.
+    if (r && r.ok && (await store.getSyncState()).dirty && (await davFromSettings())) scheduleSync();
+    return r;
+  }, (err) => { syncRunning = null; throw err; });
   return syncRunning;
 }
 
@@ -432,6 +435,12 @@ const handlers = {
   },
   async saveSettings({ cfg, token }) {
     cfg = { ...(cfg || {}) };
+    const saved = await store.getConfig();
+    const origin = (u) => { try { return new URL(u).origin; } catch { return null; } };
+    // the saved token belongs to the saved server: a different server needs its own (same rule as Test)
+    if (!token && cfg.davUrl && saved.davUrl && origin(cfg.davUrl) !== origin(saved.davUrl) && (await store.getToken())) {
+      throw new Error('Enter the app token for this server: the saved token is only ever sent to the server it was saved for.');
+    }
     // a bare server address: store the WebDAV folder it actually serves (when the server says so)
     const tok = token || (await store.getToken());
     if (cfg.davUrl && tok && /^https?:\/\/[^/]+\/?$/i.test(cfg.davUrl)) {

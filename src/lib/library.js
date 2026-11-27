@@ -6,7 +6,7 @@ import { docOf, libFromDoc } from './sync.js';
 import { readMangaPin } from './mangapin-import.js';
 
 export function emptyLibrary() {
-  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), days: {}, seen: {}, layoutTs: 0 };
+  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), days: {}, seen: {}, folds: new Set(), layoutTs: 0 };
 }
 
 const BACKUP_FORMAT = 'shiori-backup';
@@ -98,7 +98,6 @@ export function planImport(local, localCovers, text, mode, now = Date.now(), sou
     for (const [id, e] of local.entries) {
       if (keep.has(id)) continue;
       tombs.set(id, tombTime(metaOf(e, local.meta.get(id)), now));
-      summary.removed.push(short(e));
     }
     for (const id of file.entries.keys()) {
       if (local.tombs.has(id) && !local.entries.has(id)) summary.restored.push(short(file.entries.get(id)));
@@ -115,7 +114,9 @@ export function planImport(local, localCovers, text, mode, now = Date.now(), sou
     const order = [...new Set([...file.order.map((id) => survivor.get(seriesKey(file.entries.get(id)))), ...merged.order])].filter((id) => merged.entries.has(id));
     lib = { ...merged, tombs, order, layoutTs: now };
   } else {
-    const skip = new Set([...file.entries.keys()].filter((id) => local.tombs.has(id) && !local.entries.has(id)));
+    // deleted here and not live under another id (a folded duplicate is merged, not skipped)
+    const liveSeries = new Set([...local.entries.values()].map(seriesKey));
+    const skip = new Set([...file.entries].filter(([id, e]) => local.tombs.has(id) && !local.entries.has(id) && !liveSeries.has(seriesKey(e))).map(([id]) => id));
     for (const id of skip) { summary.skippedDeleted.push(short(file.entries.get(id))); file.entries.delete(id); file.meta.delete(id); }
     file.order = file.order.filter((id) => !skip.has(id));
     const merged = mergeLibraries({ ...local, layoutTs: now }, { ...file, layoutTs: 0 });
@@ -124,13 +125,19 @@ export function planImport(local, localCovers, text, mode, now = Date.now(), sou
   // classify by series, so the same series under another id counts as updated, not added
   const localBySeries = new Map([...local.entries.values()].map((e) => [seriesKey(e), e]));
   const libBySeries = new Map([...lib.entries.values()].map((e) => [seriesKey(e), e]));
+  const restoredIds = new Set(summary.restored.map((x) => x.id));
   for (const [id, e] of file.entries) {
+    if (restoredIds.has(id)) continue;
     const le = local.entries.get(id) || localBySeries.get(seriesKey(e));
     const me = libBySeries.get(seriesKey(e));
-    if (!le) { if (!summary.restored.some((x) => x.id === id)) summary.added.push(short(e)); }
+    if (!le) summary.added.push(short(e));
     else if (JSON.stringify(le) !== JSON.stringify(me)) summary.updated.push(short(e));
     else summary.unchanged++;
   }
+
+  // every series this import deletes here — replace's "not in the file", and in either mode the
+  // deletes a backup carries from its device — so the dry run never hides one
+  for (const [id, e] of local.entries) if (!lib.entries.has(id) && !libBySeries.has(seriesKey(e))) summary.removed.push(short(e));
 
   // covers referenced but present neither in the file nor locally (tolerated, preserved);
   // a snapshot's covers come from the server with the next sync
@@ -299,7 +306,8 @@ export function addEntry(lib, entry, now = Date.now()) {
 }
 
 export function findBySeries(lib, siteId, slug) {
-  for (const e of lib.entries.values()) if (e.siteId === siteId && e.slug === slug) return e;
+  const k = seriesKey({ siteId, slug });
+  for (const e of lib.entries.values()) if (seriesKey(e) === k) return e;
   return null;
 }
 

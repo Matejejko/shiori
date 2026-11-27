@@ -173,8 +173,9 @@ export function mergeEntry(a, aMeta, b, bMeta) {
   }
 
   const { progress, pm, pf } = mergeProgress(a.progress, ma, b.progress, mb);
-  const latest = cmpLatest(a.latest, b.latest) >= 0 ? a.latest : b.latest;
-  const next = cmpNext(a.next, b.next) >= 0 ? a.next : b.next;
+  // only objects compete; with neither one an object, the winning copy keeps its own (order-free)
+  const latest = isObj(a.latest) || isObj(b.latest) ? (cmpLatest(a.latest, b.latest) >= 0 ? a.latest : b.latest) : undefined;
+  const next = isObj(a.next) || isObj(b.next) ? (cmpNext(a.next, b.next) >= 0 ? a.next : b.next) : undefined;
 
   if (progress !== undefined && out.progress !== progress) out = withField(out, 'progress', progress);
   if (latest !== undefined && out.latest !== latest) out = withField(out, 'latest', latest);
@@ -290,7 +291,8 @@ export function mergeLibraries(base, other) {
     entries.set(id, m.entry);
     meta.set(id, m.meta);
   }
-  dedupeSeries(entries, meta, tombs, dead);
+  const folds = new Set([...(base.folds || []), ...(other.folds || [])]);
+  dedupeSeries(entries, meta, tombs, dead, folds);
   const [first, second] = num(other.layoutTs) > num(base.layoutTs) ? [other, base] : [base, other];
   const order = [];
   const placed = new Set();
@@ -298,28 +300,29 @@ export function mergeLibraries(base, other) {
     if (entries.has(id) && !placed.has(id)) { placed.add(id); order.push(id); }
   }
   return {
-    order, entries, meta, tombs, labels: mergeLabels(base.labels, other.labels), days: mergeDays(base.days, other.days), seen: mergeSeen(base.seen, other.seen),
+    order, entries, meta, tombs, folds, labels: mergeLabels(base.labels, other.labels), days: mergeDays(base.days, other.days), seen: mergeSeen(base.seen, other.seen),
     layoutTs: Math.max(num(base.layoutTs), num(other.layoutTs), 0),
   };
 }
 
-/** Same series on the same site, whatever its id (volatile slug parts ignored). */
-export const seriesKey = (e) => `${e.siteId}|${slugKey(e.siteId, e.slug)}`;
+/**
+ * Same series on the same site, whatever its id (volatile slug parts ignored). An entry without
+ * a usable slug can't be matched to anything, so it is only ever itself.
+ */
+export const seriesKey = (e) => { const k = slugKey(e.siteId, e.slug); return k ? `${e.siteId}|${k}` : `id:${e.id}`; };
 
 /**
  * Never keep two entries for one series (two devices pinned it, or an import brought it in
  * under another id): the smallest live id survives — every device picks the same one — the
- * others are merged into it field by field and tombstoned. Copies of the series that a
- * tombstone beat (`dead`) are merged into the survivor too: a device that was offline when a
- * duplicate got folded away still has reads on that id, and they must not be lost.
- * Entries without a usable slug are never grouped. Mutates the maps.
+ * others are merged into it field by field, tombstoned and recorded in `folds`. Stale copies of
+ * a folded id (`dead`: a device that was offline at the fold still reads on it) are merged into
+ * the survivor too, so those reads are not lost. A copy you deleted yourself is not in `folds`:
+ * its data stays deleted, even if you pin the series again. Mutates the maps and the set.
  */
-export function dedupeSeries(entries, meta, tombs, dead = new Map()) {
-  const keyOf = (e) => (slugKey(e.siteId, e.slug) ? seriesKey(e) : null);
+export function dedupeSeries(entries, meta, tombs, dead = new Map(), folds = new Set()) {
   const groups = new Map();
   for (const [id, e] of entries) {
-    const k = keyOf(e);
-    if (k === null) continue;
+    const k = seriesKey(e);
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(id);
   }
@@ -336,11 +339,13 @@ export function dedupeSeries(entries, meta, tombs, dead = new Map()) {
       fold(keep, dup, dm);
       // newer than anything that copy has seen, so it stays deleted on every device
       tombs.set(id, Math.max(num(tombs.get(id)), tombTime(dm)));
+      folds.add(id);
       entries.delete(id); meta.delete(id);
     }
   }
   for (const [id, m] of [...dead].sort((a, b) => cmp(a[0], b[0]))) {
-    const ids = groups.get(keyOf(m.entry));
+    if (!folds.has(id)) continue;
+    const ids = groups.get(seriesKey(m.entry));
     if (ids && ids[0] !== id) fold(ids[0], m.entry, m.meta);
   }
 }
@@ -351,6 +356,7 @@ export function libraryFingerprint(lib) {
   return canonical({
     e: ids.map((id) => [id, lib.entries.get(id), metaOf(lib.entries.get(id), lib.meta.get(id))]),
     t: [...lib.tombs.entries()].sort((x, y) => cmp(x[0], y[0])),
+    f: [...(lib.folds || [])].sort(),
     l: lib.labels,
     d: mergeDays(lib.days, {}),
     s: mergeSeen(lib.seen, {}),

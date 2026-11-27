@@ -65,7 +65,7 @@ export class Store {
       const raw = got['e:' + id];
       if (typeof raw !== 'string') continue;
       const e = JSON.parse(raw);
-      entries.set(id, (idx.v ?? 1) < 2 ? entryFromMangaPin(e) : e);
+      entries.set(id, (idx.v ?? 1) < 2 ? entryFromMangaPin(e, idx.labels?.tag) : e);
       order.push(id);
     }
     return {
@@ -75,6 +75,7 @@ export class Store {
       tombs: new Map(Object.entries(idx.tombs || {})),
       labels: { folder: (idx.labels && idx.labels.folder) || {} },
       days: idx.days || {},
+      folds: new Set(Array.isArray(idx.folds) ? idx.folds : []),
       // read-before-pin memory: synced since it moved into the library; older versions kept it under 'seen'
       seen: idx.seen || (await this.area.get('seen')).seen || {},
       layoutTs: idx.layoutTs || 0,
@@ -102,6 +103,7 @@ export class Store {
       tombs: Object.fromEntries(lib.tombs),
       labels: lib.labels || emptyLabels(),
       days: lib.days || {},
+      folds: [...(lib.folds || [])].sort(),
       seen: lib.seen || {},
       layoutTs: lib.layoutTs || 0,
     };

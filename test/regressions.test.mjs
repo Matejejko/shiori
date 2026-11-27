@@ -171,13 +171,13 @@ test('data from before format 2 (MangaPin tag numbers) is upgraded once, by vers
   assert.deepEqual(Object.keys(entryFromMangaPin(e)), Object.keys(e)); // field order kept
   // storage without a version: upgraded when read, stored as version 2 by the next save
   const store = new Store(new MemoryArea());
-  await store.area.set({ 'e:OldTagsAA1': JSON.stringify(e), lib: { order: ['OldTagsAA1'], meta: {}, tombs: {}, labels: { folder: {}, tag: { 81: { name: 'x', ts: 1 } } } } });
+  await store.area.set({ 'e:OldTagsAA1': JSON.stringify(e), lib: { order: ['OldTagsAA1'], meta: {}, tombs: {}, labels: { folder: {}, tag: { 999: { name: 'Re-read later', ts: 1 } } } } });
   const lib = await store.loadLibrary();
-  assert.deepEqual(lib.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Tag 999']);
+  assert.deepEqual(lib.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Re-read later']); // the name you gave a tag number wins
   assert.deepEqual(lib.labels, { folder: {} });
   await store.saveLibrary(lib);
   assert.equal((await store.area.get('lib')).lib.v, 2);
-  assert.deepEqual(JSON.parse((await store.area.get('e:OldTagsAA1'))['e:OldTagsAA1']).tags, ['Fantasy', 'Action', 'Tag 999']);
+  assert.deepEqual(JSON.parse((await store.area.get('e:OldTagsAA1'))['e:OldTagsAA1']).tags, ['Fantasy', 'Action', 'Re-read later']);
   // server: a format-1 library.json is upgraded; a format-2 one is read exactly as written
   const doc = fromDoc(JSON.stringify({ format: 'shiori-library', version: 1, entries: [e], labels: { folder: {}, type: {}, tag: {} } }));
   assert.deepEqual(doc.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Tag 999']);
@@ -373,4 +373,53 @@ test('reading a series unpinned on one device: pinning it on the other starts at
   await old.saveLibrary(lo);
   assert.equal((await old.area.get('seen')).seen, undefined);
   assert.equal((await old.loadLibrary()).seen['arena|legacy'].chap, 4);
+});
+
+test('import audit: folded ids merge, the dry run lists every delete, a re-pinned series stays fresh', async () => {
+  const { mergeLibraries } = await import('../src/lib/merge.js');
+  const mk = (id, chap, ts, extra = {}) => ({ siteId: 'arena', slug: 'alpha', name: 'Alpha', progress: { chap, ts }, cLang: 'en', folder: 1, tags: [], ts, createTs: 1, id, ...extra });
+  const mp = (entries) => JSON.stringify({ version: 1, entries, imgs: {} });
+  // 1: the MangaPin copy was folded into the Shiori one; a newer MangaPin export still brings its reading
+  let lib = emptyLibrary(); addEntry(lib, mk('Aaaaaaaaaa', 100, 1000));
+  lib = planImport(lib, new Set(), mp([mk('MangaPin01', 110, 2000)]), 'merge', 3000, 'mangapin').lib;
+  assert.deepEqual([...lib.entries.keys()], ['Aaaaaaaaaa']);
+  const again = planImport(lib, new Set(), mp([mk('MangaPin01', 140, 4000)]), 'merge', 5000, 'mangapin');
+  assert.deepEqual(again.summary.skippedDeleted, []);
+  assert.equal(again.lib.entries.get('Aaaaaaaaaa').progress.chap, 140);
+  // 2: a backup's deletes are listed in a merge dry run
+  const here = emptyLibrary(); addEntry(here, mk('Bbbbbbbbbb', 5, 1000, { slug: 'beta', name: 'Beta' }));
+  const there = structuredClone(here); deleteEntry(there, 'Bbbbbbbbbb', 2000);
+  const { exportBackup } = await import('../src/lib/library.js');
+  const plan = planImport(here, new Set(), exportBackup(there, () => undefined, 2500), 'merge', 3000, 'shiori');
+  assert.deepEqual(plan.summary.removed.map((x) => x.id), ['Bbbbbbbbbb']);
+  assert.equal(plan.lib.entries.size, 0);
+  // 3: delete at ch50 to start over, pin again at ch3: a stale copy of the deleted id brings nothing back
+  const dev = emptyLibrary(); addEntry(dev, mk('Oldoldold1', 50, 1000));
+  const stale = structuredClone(dev);
+  deleteEntry(dev, 'Oldoldold1', 2000); addEntry(dev, mk('Newnewnew1', 3, 3000));
+  const m = mergeLibraries(stale, dev);
+  assert.deepEqual([...m.entries.keys()], ['Newnewnew1']);
+  assert.equal(m.entries.get('Newnewnew1').progress.chap, 3);
+  // 4: entries without a usable slug are each their own series in a replace
+  const nos = emptyLibrary();
+  for (const id of ['Nnnnnnnnn1', 'Nnnnnnnnn2', 'Nnnnnnnnn3']) addEntry(nos, { siteId: 'kagane', slug: '', name: id, cLang: 'en', folder: 1, tags: [], ts: 1, createTs: 1, id });
+  const rep = planImport(nos, new Set(), mp([{ ...nos.entries.get('Nnnnnnnnn1') }]), 'replace', 5000, 'mangapin');
+  assert.deepEqual([...rep.lib.entries.keys()], ['Nnnnnnnnn1']);
+  assert.deepEqual(rep.summary.removed.map((x) => x.id).sort(), ['Nnnnnnnnn2', 'Nnnnnnnnn3']);
+});
+
+test('merge: an empty latest/next is order-free', async () => {
+  const { mergeEntry } = await import('../src/lib/merge.js');
+  const a = { siteId: 's', slug: 'x', name: 'n', latest: null, folder: 1, ts: 5, id: 'AAAAAAAAAA' };
+  const b = { siteId: 's', slug: 'x', name: 'n', folder: 1, ts: 5, id: 'AAAAAAAAAA' };
+  assert.equal(JSON.stringify(mergeEntry(a, null, b, null).entry), JSON.stringify(mergeEntry(b, null, a, null).entry));
+});
+
+test('the first upload also checks the clock (the server is empty, its 404 still has a Date)', async () => {
+  const s = fakeDav({ clock: () => Date.now() - 3 * 3600e3 });
+  const dav = new WebDav({ url: s.root, user: s.user, token: s.token, fetch: s.fetch });
+  const store = new Store(new MemoryArea());
+  await importInto(store, fixture, 'replace', Date.now());
+  await assert.rejects(syncOnce({ store, dav }), /clock is 180 min ahead/);
+  assert.equal([...s.files.keys()].some((p) => p.endsWith('library.json')), false);
 });

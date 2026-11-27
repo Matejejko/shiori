@@ -63,5 +63,6 @@ export function fakeDav({ root = 'https://dav.test/remote.php/webdav/', user = '
         return new Response('', { status: 405 });
     }
   }
-  return { fetch: fetchImpl, files, dirs, stats, root, user, token };
+  const withDate = async (url, init) => { const res = await fetchImpl(url, init); res.headers.set('date', new Date(clock()).toUTCString()); return res; };
+  return { fetch: withDate, files, dirs, stats, root, user, token };
 }

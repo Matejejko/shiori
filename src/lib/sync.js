@@ -38,6 +38,7 @@ export function docOf(lib, now = Date.now()) {
     labels: lib.labels || emptyLabels(),
     days: lib.days || {},
     seen: lib.seen || {},
+    folds: [...(lib.folds || [])].sort(),
     layoutTs: lib.layoutTs || 0,
   };
 }
@@ -61,7 +62,7 @@ export function libFromDoc(d, what = 'library') {
   for (const e of d.entries) {
     if (!e || typeof e.id !== 'string') continue;
     if (!entries.has(e.id)) order.push(e.id);
-    entries.set(e.id, d.version < 2 ? entryFromMangaPin(e) : e); // format 1 = MangaPin's tag numbers
+    entries.set(e.id, d.version < 2 ? entryFromMangaPin(e, d.labels?.tag) : e); // format 1 = MangaPin's tag numbers (+ your names for them)
     if (d.meta && d.meta[e.id]) meta.set(e.id, d.meta[e.id]);
   }
   return {
@@ -70,6 +71,7 @@ export function libFromDoc(d, what = 'library') {
     labels: { folder: d.labels && typeof d.labels.folder === 'object' && d.labels.folder ? d.labels.folder : {} },
     days: d.days && typeof d.days === 'object' && !Array.isArray(d.days) ? d.days : {},
     seen: d.seen && typeof d.seen === 'object' && !Array.isArray(d.seen) ? d.seen : {},
+    folds: new Set(Array.isArray(d.folds) ? d.folds.filter((x) => typeof x === 'string') : []),
     layoutTs: typeof d.layoutTs === 'number' ? d.layoutTs : 0,
   };
 }
@@ -102,7 +104,7 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
     const iso = new Date(now()).toISOString();
     const day = iso.slice(0, 10);
     if (!st.snapNext && st.snapDay === day) return;
-    const name = st.snapNext ? `library-${iso.slice(0, 16).replace(':', '-')}-before-import.json` : `library-${day}.json`;
+    const name = st.snapNext ? `library-${iso.slice(0, 23).replace(/[:.]/g, '-')}-before-import.json` : `library-${day}.json`;
     try {
       await dav.mkcol(BACKUPS);
       // another device may have taken today's snapshot already: that one is older, keep it
@@ -141,7 +143,7 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
       if (err.status === 409) await store.setSyncState({ dirsOk: false });
       throw err;
     }
-    checkClock(remote, now());
+    checkClock(remote || { date: dav.lastDate }, now());
     const remoteLib = remote ? fromDoc(remote.text) : null;
 
     // merge + persist locally under the store lock (tracker/UI edits wait for us)
@@ -177,6 +179,9 @@ export async function syncOnce({ store, dav, now = Date.now, log = () => {}, dir
     merged = plan.m;
     await store.setSyncState({ etag: res.etag || null });
   }
+
+  // the library itself is on the server now: a cover failure below must not keep it "unsynced"
+  await store.setSyncState({ syncedSeq: seqAtStart });
 
   // ---- covers ---------------------------------------------------------------------------
   const listing = await dav.propfind(COVERS + '/', 1);

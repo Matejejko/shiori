@@ -6,10 +6,14 @@ import { parseExport, withField, MANGAPIN_TAGS } from './mangapin.js';
 import { normalizeTags } from './labels.js';
 import { mergeEntry } from './merge.js';
 
-/** One MangaPin entry in Shiori's form: tag numbers become names; everything else is kept as is. */
-export function entryFromMangaPin(e) {
+/**
+ * One MangaPin entry in Shiori's form: tag numbers become names; everything else is kept as is.
+ * `own` = names the user gave tag numbers in an older Shiori (labels.tag: { '<n>': {name} }); they win.
+ */
+export function entryFromMangaPin(e, own) {
   if (!e || !Array.isArray(e.tags) || !e.tags.some((t) => typeof t !== 'string')) return e;
-  const names = e.tags.map((t) => (typeof t === 'number' && Number.isFinite(t) ? MANGAPIN_TAGS[t] || `Tag ${t}` : t));
+  const named = (t) => (own && own[t] && typeof own[t].name === 'string' && own[t].name.trim()) || MANGAPIN_TAGS[t] || `Tag ${t}`;
+  const names = e.tags.map((t) => (typeof t === 'number' && Number.isFinite(t) ? named(t) : t));
   return withField(e, 'tags', normalizeTags(names));
 }
 

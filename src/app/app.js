@@ -426,7 +426,7 @@ async function dryRun() {
       h('dt', { text: 'New' }), h('dd', { text: String(s.added.length) }),
       h('dt', { text: 'Updated' }), h('dd', { text: String(s.updated.length) }),
       h('dt', { text: 'Unchanged' }), h('dd', { text: String(s.unchanged) }),
-      mode === 'replace' ? [h('dt', { text: 'Removed from library' }), h('dd', { class: s.removed.length ? 'err-text' : '', text: String(s.removed.length) })] : null,
+      mode === 'replace' || s.removed.length ? [h('dt', { text: 'Removed from library' }), h('dd', { class: s.removed.length ? 'err-text' : '', text: String(s.removed.length) })] : null,
       s.skippedDeleted.length ? [h('dt', { text: 'Deleted here — not re-added' }), h('dd', { text: `${s.skippedDeleted.length} (use Replace to bring them back)` })] : null,
       s.restored.length ? [h('dt', { text: 'Restored (were deleted)' }), h('dd', { text: String(s.restored.length) })] : null,
       h('dt', { text: 'New covers' }), h('dd', { text: String(s.newCovers) }),
@@ -441,7 +441,9 @@ async function dryRun() {
     s.problems.length ? h('details', {}, h('summary', { text: 'Warnings' }), h('ul', {}, s.problems.map((p) => h('li', { text: p })))) : null,
     h('div', { class: 'row tight' },
       h('button', { type: 'button', text: mode === 'replace' ? `Replace library (${s.fileEntries} entries)` : `Merge ${s.added.length + s.updated.length} changes`, on: { click: async (ev) => {
-        if (mode === 'replace' && s.removed.length && !(await confirmBox('Replace your library?', `${s.removed.length} series that are not in the file will be deleted on all synced devices.`, 'Replace library'))) return;
+        if (s.removed.length && !(await confirmBox(mode === 'replace' ? 'Replace your library?' : 'Import this file?',
+          mode === 'replace' ? `${s.removed.length} series that are not in the file will be deleted on all synced devices.` : `${s.removed.length} series deleted on the device this backup came from will be deleted here and on all synced devices.`,
+          mode === 'replace' ? 'Replace library' : 'Import'))) return;
         ev.target.disabled = true;
         try {
           await send('importFile', { text: fileText, mode, source, apply: true, planId: s.planId });
@@ -525,7 +527,9 @@ $('settings').addEventListener('submit', async (ev) => {
   const msg = $('settingsMsg');
   if (!safeHttpUrl(cfg.davUrl)) { msg.textContent = 'URL must be http(s)'; msg.className = 'small err-text'; return; }
   await ensureHostPermission(cfg.davUrl); // first await: keeps the user gesture for Firefox
-  const { cfg: saved } = await send('saveSettings', { cfg, token: token || undefined });
+  let saved;
+  try { ({ cfg: saved } = await send('saveSettings', { cfg, token: token || undefined })); }
+  catch (e) { msg.textContent = e.message; msg.className = 'small err-text'; return; }
   msg.textContent = saved.davUrl !== cfg.davUrl ? `Saved. WebDAV folder: ${saved.davUrl}` : 'Saved.'; msg.className = 'small ok-text';
   renderSettings();
 });

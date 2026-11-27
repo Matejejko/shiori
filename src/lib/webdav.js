@@ -64,6 +64,7 @@ export class WebDav {
     } finally {
       clearTimeout(timer);
     }
+    this.lastDate = res.headers.get('date'); // the server's clock, from any answer (see sync.checkClock)
     if (res.status === 401 || res.status === 403) {
       throw new DavError(`${method} ${path}: ${res.status} — check username and app token`, res.status, 'auth');
     }
