@@ -509,8 +509,8 @@ $('settings').addEventListener('submit', async (ev) => {
   const msg = $('settingsMsg');
   if (!safeHttpUrl(cfg.davUrl)) { msg.textContent = 'URL must be http(s)'; msg.className = 'small err-text'; return; }
   await ensureHostPermission(cfg.davUrl); // first await: keeps the user gesture for Firefox
-  await send('saveSettings', { cfg, token: token || undefined });
-  msg.textContent = 'Saved.'; msg.className = 'small ok-text';
+  const { cfg: saved } = await send('saveSettings', { cfg, token: token || undefined });
+  msg.textContent = saved.davUrl !== cfg.davUrl ? `Saved. WebDAV folder: ${saved.davUrl}` : 'Saved.'; msg.className = 'small ok-text';
   renderSettings();
 });
 $('test').addEventListener('click', async () => {
@@ -519,6 +519,7 @@ $('test').addEventListener('click', async () => {
   msg.textContent = 'Testing…'; msg.className = 'small';
   await ensureHostPermission(cfg.davUrl);
   const r = await send('testConnection', { cfg, token: token || undefined });
+  if (r.ok && r.davUrl) $('settings').davUrl.value = r.davUrl; // a bare server address, completed
   msg.textContent = r.ok ? r.message : r.error;
   msg.className = 'small ' + (r.ok ? 'ok-text' : 'err-text');
 });

@@ -317,3 +317,14 @@ test('moving a series to another site keeps what is yours, drops the dead site, 
   }
   assert.throws(() => moveEntry(la, id, { siteId: 'vortex', slug: 'solo-max' }), /already on that site/);
 });
+
+test('a bare server address finds the WebDAV folder; a non-WebDAV address explains itself', async () => {
+  const { findDavRoot } = await import('../src/lib/webdav.js');
+  const s = fakeDav(); // serves https://dav.test/remote.php/webdav/
+  const o = { user: s.user, token: s.token, fetch: s.fetch };
+  assert.equal(await findDavRoot({ url: 'https://dav.test', ...o }), 'https://dav.test/remote.php/webdav/');
+  assert.equal(await findDavRoot({ url: s.root, ...o }), s.root);
+  const f405 = async () => new Response('', { status: 405 });
+  await assert.rejects(findDavRoot({ url: 'https://x.test/', user: 'u', token: 't', fetch: f405 }), /not a WebDAV folder.*remote\.php\/webdav/);
+  await assert.rejects(findDavRoot({ url: 'https://dav.test/', user: s.user, token: 'wrong', fetch: s.fetch }), /check username and app token/);
+});

@@ -24,7 +24,8 @@ can't be fetched, and such series are pinned without a cover.
 ## Set up sync
 
 1. In OpenCloud: Settings → App Tokens (or `opencloud auth-app create --user-name <you> --expiration 8760h`).
-2. Library → Settings: WebDAV URL of your personal space, e.g.
+2. Library → Settings: WebDAV URL of your personal space (the bare server address works too: *Test
+   connection* / *Save* find `/remote.php/webdav/` or `/dav/files/<user>/`), e.g.
    `https://oc.192.168.0.101.sslip.io/remote.php/webdav/` (also valid: `/dav/files/<user>/`),
    username, app token → *Test connection* → *Save*.
 3. Sync runs 5 s after every change and every 15 min; the library lives in `/Shiori/`:

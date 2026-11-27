@@ -165,3 +165,27 @@ export function parseMultistatus(xml, requestUrl) {
   }
   return out;
 }
+
+/**
+ * The WebDAV folder for what the user typed: the address as given, or — for a bare server
+ * address like https://cloud.example — the standard OpenCloud / Nextcloud / ownCloud paths.
+ * Resolves to the first that answers; throws the most useful error otherwise.
+ */
+export async function findDavRoot({ url, user, token, fetch }) {
+  let u;
+  try { u = new URL(url); } catch { throw new DavError('Server URL is not a valid URL', 0, 'config'); }
+  const tries = [u.href];
+  if (u.pathname === '/' && !u.search) tries.push(`${u.origin}/remote.php/webdav/`, `${u.origin}/dav/files/${encodeURIComponent(user)}/`);
+  let first = null;
+  for (const t of tries) {
+    try {
+      if (await new WebDav({ url: t, user, token, fetch }).propfind('', 0)) return t;
+      first ||= new DavError('WebDAV folder not found (404) — check the URL', 404);
+    } catch (e) {
+      if (e.kind !== 'http') throw e; // network, certificate, wrong token: trying other paths won't help
+      first ||= e;
+    }
+  }
+  if (first.status === 405) throw new DavError('That address is not a WebDAV folder (HTTP 405). For OpenCloud it is https://<server>/remote.php/webdav/', 405);
+  throw first;
+}

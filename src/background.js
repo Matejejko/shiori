@@ -2,7 +2,7 @@
 // Chrome: MV3 service worker. Firefox 128+: event page (background.scripts). Both ES modules.
 
 import { Store } from './lib/store.js';
-import { WebDav } from './lib/webdav.js';
+import { WebDav, findDavRoot } from './lib/webdav.js';
 import { tagIdsFromNames } from './lib/labels.js';
 import { syncOnce } from './lib/sync.js';
 import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry, countRead } from './lib/library.js';
@@ -433,7 +433,13 @@ const handlers = {
     return { name: exportFileName(), text: exportBackup(lib, (k) => covers.get(k)) };
   },
   async saveSettings({ cfg, token }) {
-    const next = await store.setConfig(cfg || {});
+    cfg = { ...(cfg || {}) };
+    // a bare server address: store the WebDAV folder it actually serves (when the server says so)
+    const tok = token || (await store.getToken());
+    if (cfg.davUrl && tok && /^https?:\/\/[^/]+\/?$/i.test(cfg.davUrl)) {
+      try { cfg.davUrl = await findDavRoot({ url: cfg.davUrl, user: cfg.user, token: tok }); } catch { /* saved as typed; Test connection explains */ }
+    }
+    const next = await store.setConfig(cfg);
     if (typeof token === 'string' && token) await store.setToken(token);
     if (token === null) await store.setToken('');
     await store.setSyncState({ dirsOk: false, etag: null });
@@ -446,11 +452,12 @@ const handlers = {
     if (!token && origin(url) !== origin(saved.davUrl)) return { ok: false, error: 'Enter the app token to test a different server (the saved one is only sent to the saved server).' };
     const tok = token || (await store.getToken());
     try {
-      const dav = new WebDav({ url, user: (cfg && cfg.user) || saved.user, token: tok });
-      const root = await dav.propfind('', 0);
-      if (!root) return { ok: false, error: 'WebDAV root not found (404) — check the URL' };
+      const user = (cfg && cfg.user) || saved.user;
+      const found = await findDavRoot({ url, user, token: tok });
+      const dav = new WebDav({ url: found, user, token: tok });
       const lib = await dav.head('Shiori/library.json');
-      return { ok: true, message: lib ? 'Connected. Shiori/library.json exists on the server.' : 'Connected. No library on the server yet — the first sync will create Shiori/.' };
+      const where = found !== new URL(url).href ? ` WebDAV folder: ${found} — Save to keep it.` : '';
+      return { ok: true, davUrl: found, message: (lib ? 'Connected. Shiori/library.json exists on the server.' : 'Connected. No library on the server yet — the first sync will create Shiori/.') + where };
     } catch (err) {
       return { ok: false, error: String(err.message || err) };
     }
