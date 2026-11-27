@@ -30,7 +30,7 @@ for (const fx of exportFixtures()) {
 }
 
 test('the converter carries the same MangaPin tag table as Shiori; tags MangaPin lacks are left out and counted', async () => {
-  const { MANGAPIN_TAGS } = await import('../src/lib/labels.js');
+  const { MANGAPIN_TAGS } = await import('../src/lib/mangapin.js');
   const copy = new Function(`${block}; return MANGAPIN_TAGS;`)();
   assert.deepEqual(copy, MANGAPIN_TAGS);
   const b = JSON.parse(exportBackup(emptyLibrary(), () => undefined));

@@ -12,7 +12,11 @@
 //   dseq        local change counter (bumped by every non-silent library save)
 
 import { emptyLabels } from './merge.js';
-import { normalizeEntry } from './labels.js';
+import { entryFromMangaPin } from './mangapin-import.js';
+
+// Version of the data in this browser's storage (the index's `v`; none = 1). 2: tags are names.
+// Older data is MangaPin's shape and is upgraded once, when read; the next save stores it as 2.
+export const STORE_VERSION = 2;
 
 const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), days: {}, seen: undefined, layoutTs: 0 });
 
@@ -60,7 +64,8 @@ export class Store {
     for (const id of idx.order) {
       const raw = got['e:' + id];
       if (typeof raw !== 'string') continue;
-      entries.set(id, normalizeEntry(JSON.parse(raw))); // older data: MangaPin tag numbers -> names
+      const e = JSON.parse(raw);
+      entries.set(id, (idx.v ?? 1) < 2 ? entryFromMangaPin(e) : e);
       order.push(id);
     }
     return {
@@ -91,6 +96,7 @@ export class Store {
     }
     const removed = [...oldIds].filter((id) => !lib.entries.has(id)).map((id) => 'e:' + id);
     writes.lib = {
+      v: STORE_VERSION,
       order: lib.order.filter((id) => lib.entries.has(id)),
       meta: Object.fromEntries([...lib.meta].filter(([id]) => lib.entries.has(id))),
       tombs: Object.fromEntries(lib.tombs),

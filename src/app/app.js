@@ -1,6 +1,6 @@
 import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
 import { formPatch } from '../lib/library.js';
-import { DEFAULT_LABELS, MANGAPIN_TAGS, tagKey } from '../lib/labels.js';
+import { DEFAULT_LABELS, KNOWN_TAGS, tagKey } from '../lib/labels.js';
 import { computeStats, computeReading, MIN_PER_CHAPTER } from '../lib/stats.js';
 
 const $ = (id) => document.getElementById(id);
@@ -70,7 +70,7 @@ const distinct = (arr) => [...new Set(arr)].sort((a, b) => (typeof a === 'number
 function knownKeys(kind, withDefaults = false) {
   if (kind === 'tag') { // names; withDefaults adds the common genres so they can be picked
     const byKey = new Map();
-    for (const t of [...state.lib.entries.flatMap((e) => (Array.isArray(e.tags) ? e.tags : [])), ...(withDefaults ? Object.values(MANGAPIN_TAGS) : [])]) {
+    for (const t of [...state.lib.entries.flatMap((e) => (Array.isArray(e.tags) ? e.tags : [])), ...(withDefaults ? KNOWN_TAGS : [])]) {
       if (typeof t === 'string' && !byKey.has(tagKey(t))) byKey.set(tagKey(t), t);
     }
     return [...byKey.values()].sort((a, b) => a.localeCompare(b));

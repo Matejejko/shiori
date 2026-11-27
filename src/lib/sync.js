@@ -6,7 +6,7 @@ import { coverKeyToFile, coverFileToKey, parseCoverKey, verifyCover, referencedI
 import { md5 } from './md5.js';
 import { b64ToBytes, bytesToB64 } from './base64.js';
 import { DavError } from './webdav.js';
-import { normalizeEntry } from './labels.js';
+import { entryFromMangaPin } from './mangapin-import.js';
 
 export const REMOTE_DIR = 'Shiori';
 const FORMAT = 'shiori-library';
@@ -60,7 +60,7 @@ export function libFromDoc(d, what = 'library') {
   for (const e of d.entries) {
     if (!e || typeof e.id !== 'string') continue;
     if (!entries.has(e.id)) order.push(e.id);
-    entries.set(e.id, normalizeEntry(e));
+    entries.set(e.id, d.version < 2 ? entryFromMangaPin(e) : e); // format 1 = MangaPin's tag numbers
     if (d.meta && d.meta[e.id]) meta.set(e.id, d.meta[e.id]);
   }
   return {

@@ -109,11 +109,11 @@ test('concurrent cover writes never lose a key from the index', async () => {
 });
 
 test('editor: an untouched Save is a no-op; tag order is the entry\'s own', () => {
-  const e = { name: 'Name ', tags: [7, 3], folder: 1 };
-  const shown = { name: 'Name', tags: [3, 7], folder: 1 };
+  const e = { name: 'Name ', tags: ['Murim', 'Action'], folder: 1 };
+  const shown = { name: 'Name', tags: ['Action', 'Murim'], folder: 1 };
   assert.deepEqual(formPatch(e, shown, { ...shown }), {});
-  assert.deepEqual(formPatch(e, shown, { ...shown, tags: [3, 7, 9] }), { tags: [7, 3, 9] });
-  assert.deepEqual(formPatch(e, shown, { ...shown, tags: [7] }), { tags: [7] });
+  assert.deepEqual(formPatch(e, shown, { ...shown, tags: ['Action', 'Murim', 'Isekai'] }), { tags: ['Murim', 'Action', 'Isekai'] });
+  assert.deepEqual(formPatch(e, shown, { ...shown, tags: ['Murim'] }), { tags: ['Murim'] });
   assert.deepEqual(formPatch(e, shown, { ...shown, folder: 2 }), { folder: 2 });
 });
 
@@ -155,26 +155,35 @@ test('built-in folder names; your own folder names win', async () => {
 });
 
 test('tags are names: every genre a site lists is kept, cleaned up, one spelling per tag', async () => {
-  const { normalizeTags, MANGAPIN_TAGS } = await import('../src/lib/labels.js');
+  const { normalizeTags } = await import('../src/lib/labels.js');
+  const { MANGAPIN_TAGS } = await import('../src/lib/mangapin.js');
   assert.deepEqual(
-    normalizeTags(['Action', ' fantasy ', 'Slice of Life', 'shônen', 'Tower Climbing', 'ACTION', 'acción', 'sci-fi', 'Regression', 'love', '', '42', 60, 999]),
-    ['Action', 'Fantasy', 'Slice of Life', 'Shounen', 'Tower Climbing', 'Science Fiction', 'Regression', 'Love', 'Tag 999']);
+    normalizeTags(['Action', ' fantasy ', 'Slice of Life', 'shônen', 'Tower Climbing', 'ACTION', 'acción', 'sci-fi', 'Regression', 'love', '', '42', 60]),
+    ['Action', 'Fantasy', 'Slice of Life', 'Shounen', 'Tower Climbing', 'Science Fiction', 'Regression', 'Love']); // numbers are not tags inside Shiori
   assert.equal(MANGAPIN_TAGS[20], '4 Koma'); assert.equal(MANGAPIN_TAGS[30], 'Self Published');
 });
 
-test('older data with MangaPin tag numbers reads as names everywhere (storage, server, import)', async () => {
-  const { normalizeEntry } = await import('../src/lib/labels.js');
-  const { fromDoc } = await import('../src/lib/sync.js');
-  const e = { siteId: 'arena', slug: 's', name: 'n', cLang: 'en', folder: 1, tags: [81, 60], ts: 1, createTs: 1, id: 'OldTagsAA1' };
-  assert.deepEqual(normalizeEntry(e).tags, ['Fantasy', 'Action']);
-  assert.deepEqual(Object.keys(normalizeEntry(e)), Object.keys(e)); // field order kept
+test('data from before format 2 (MangaPin tag numbers) is upgraded once, by version, in storage and from the server', async () => {
+  const { entryFromMangaPin } = await import('../src/lib/mangapin-import.js');
+  const { fromDoc, toDoc } = await import('../src/lib/sync.js');
+  const e = { siteId: 'arena', slug: 's', name: 'n', cLang: 'en', folder: 1, tags: [81, 60, 999], ts: 1, createTs: 1, id: 'OldTagsAA1' };
+  assert.deepEqual(entryFromMangaPin(e).tags, ['Fantasy', 'Action', 'Tag 999']);
+  assert.deepEqual(Object.keys(entryFromMangaPin(e)), Object.keys(e)); // field order kept
+  // storage without a version: upgraded when read, stored as version 2 by the next save
   const store = new Store(new MemoryArea());
   await store.area.set({ 'e:OldTagsAA1': JSON.stringify(e), lib: { order: ['OldTagsAA1'], meta: {}, tombs: {}, labels: { folder: {}, tag: { 81: { name: 'x', ts: 1 } } } } });
   const lib = await store.loadLibrary();
-  assert.deepEqual(lib.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action']);
+  assert.deepEqual(lib.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Tag 999']);
   assert.deepEqual(lib.labels, { folder: {} });
+  await store.saveLibrary(lib);
+  assert.equal((await store.area.get('lib')).lib.v, 2);
+  assert.deepEqual(JSON.parse((await store.area.get('e:OldTagsAA1'))['e:OldTagsAA1']).tags, ['Fantasy', 'Action', 'Tag 999']);
+  // server: a format-1 library.json is upgraded; a format-2 one is read exactly as written
   const doc = fromDoc(JSON.stringify({ format: 'shiori-library', version: 1, entries: [e], labels: { folder: {}, type: {}, tag: {} } }));
-  assert.deepEqual(doc.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action']);
+  assert.deepEqual(doc.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Tag 999']);
+  assert.equal(JSON.parse(toDoc(doc)).version, 2);
+  const v2 = { ...e, tags: ['fantasy', 'Action'] }; // format 2 is not re-interpreted, not even cleaned up again
+  assert.deepEqual(fromDoc(JSON.stringify({ format: 'shiori-library', version: 2, entries: [v2] })).entries.get('OldTagsAA1').tags, ['fantasy', 'Action']);
 });
 
 test('reading before pinning: chapter and series pages map to one series; forward only; max 100, 30 days', async () => {
@@ -210,8 +219,8 @@ test('stats: chapters (pinned and with recent unpinned reads), folders, waiting,
   const now = Date.UTC(2026, 10, 25), day = 86400e3;
   const e = (o) => ({ siteId: 'comix', slug: 's', name: 'n', folder: 1, tags: [], ts: 1, createTs: now - 90 * day, id: 'x', ...o });
   const entries = [
-    e({ name: 'A', progress: { chap: 120.5, ts: now - day }, latest: { chap: 125, ts: 1 }, tags: [81, 60], score: 8 }),
-    e({ name: 'B', progress: { chap: 30, ts: now - 30 * day }, latest: { chap: 30, ts: 1 }, folder: 4, tags: [81], endTs: now - day, siteId: 'asura' }),
+    e({ name: 'A', progress: { chap: 120.5, ts: now - day }, latest: { chap: 125, ts: 1 }, tags: ['Fantasy', 'Action'], score: 8 }),
+    e({ name: 'B', progress: { chap: 30, ts: now - 30 * day }, latest: { chap: 30, ts: 1 }, folder: 4, tags: ['Fantasy'], endTs: now - day, siteId: 'asura' }),
     e({ name: 'C', folder: 3, latest: { chap: 10, ts: 1 }, createTs: now - 2 * day, score: 6 }),
   ];
   const seen = { 'arena|x': { chap: 23, ts: now - day }, 'arena|old': { chap: 50, ts: now - 40 * day } };
@@ -229,7 +238,7 @@ test('stats: chapters (pinned and with recent unpinned reads), folders, waiting,
   assert.equal(s.finishedYear, 1);
   assert.equal(s.avgScore, 7);
   assert.deepEqual(s.topSites, [['comix', 120], ['asura', 30]]);
-  assert.deepEqual(s.topTags[0], [81, 2]);
+  assert.deepEqual(s.topTags[0], ['Fantasy', 2]);
   assert.deepEqual(s.longest, { name: 'A', chap: 120.5 });
 });
 
@@ -310,7 +319,7 @@ test('moving a series to another site keeps what is yours, drops the dead site, 
   const dav = server();
   const a = new Store(new MemoryArea()), b = new Store(new MemoryArea());
   const lib = emptyLibrary();
-  addEntry(lib, { siteId: 'asura', slug: 'solo-max-b60d532c', name: 'Solo Max', img: 'local:3:00000000000000000000000000000000.webp', latest: { chap: 120, slug: 'c-120', ts: 5 }, next: { chap: 81, slug: 'c-81', ts: 5 }, progress: { chap: 80, slug: 'chapter-80', ts: 4 }, cLang: 'en', folder: 4, tags: [3, 7], score: 9, ts: 6, createTs: 1, id: 'OldOldOld1' });
+  addEntry(lib, { siteId: 'asura', slug: 'solo-max-b60d532c', name: 'Solo Max', img: 'local:3:00000000000000000000000000000000.webp', latest: { chap: 120, slug: 'c-120', ts: 5 }, next: { chap: 81, slug: 'c-81', ts: 5 }, progress: { chap: 80, slug: 'chapter-80', ts: 4 }, cLang: 'en', folder: 4, tags: ['Manhwa', 'Donghua'], score: 9, ts: 6, createTs: 1, id: 'OldOldOld1' });
   await a.saveLibrary(lib);
   await syncOnce({ store: a, dav: dav() }); await syncOnce({ store: b, dav: dav() });
 

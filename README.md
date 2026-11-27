@@ -72,9 +72,12 @@ resolve even on your LAN.
   fixed (Comic, Novel, Anime).
 - `tags` are names — every genre the site lists when you pin, cleaned up: one spelling per tag (case,
   accents and other languages' names of MangaPin's genres count as the same tag), all-caps/all-lowercase
-  names capitalised. A MangaPin import turns its tag numbers into names (format version 2; older
-  libraries are converted when read). tools/shiori-to-mangapin.html turns names back into MangaPin's
-  numbers and leaves out tags MangaPin's list doesn't have.
+  names capitalised. Inside Shiori tags are only ever names.
+- **MangaPin has exactly one way in:** `src/lib/mangapin-import.js` turns a MangaPin export (Import →
+  MangaPin export) into Shiori's form — tag numbers become names, MangaPin's `ts` becomes the edit time.
+  Data written before format 2 is MangaPin-shaped, so the same function upgrades it once, chosen by
+  version: `library.json` with `version: 1`, and browser storage without `v: 2`. Nothing else in Shiori
+  reads MangaPin's numbers; tools/shiori-to-mangapin.html is the way back.
 - Export: `Shiori-DDMMYYYY.json` (local date), a Shiori backup: `{format: "shiori-backup", version,
   library: <same as library.json>, covers: {key: base64}}`. Importing it merges like another device that
   synced (edit times and deletes included), or replaces as below. MangaPin can't read it.
@@ -209,7 +212,8 @@ node --test
 ```
 manifest.json
 src/background.js        all network I/O and all library writes (tracking, sync, release checks, pinning)
-src/lib/                 pure modules: mangapin (format), merge, library, store, sync, webdav,
+src/lib/                 pure modules: mangapin (MangaPin's format + tag table), mangapin-import (the one
+                         MangaPin -> Shiori conversion), labels (tag names), merge, library, store, sync, webdav,
                          adapters + sites (site table), tracker, releases, cover, md5, base64
 src/popup/  src/app/     UI (DOM built with textContent only — no innerHTML anywhere)
 test/                    node:test suites, fixtures (incl. saved live site responses), OpenCloud scripts

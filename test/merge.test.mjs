@@ -13,7 +13,7 @@ const ID = 'AbCdEfGh12';
 function baseEntry(ts = 1000) {
   return {
     siteId: 'comix', slug: 'some-series', name: 'Some Series', img: 'local:10:0123456789abcdef0123456789abcdef.webp',
-    latest: { chap: 10, ts: ts - 5 }, progress: { chap: 8, ts: ts - 10 }, cLang: 'en', folder: 1, tags: [1], ts, createTs: 1, id: ID,
+    latest: { chap: 10, ts: ts - 5 }, progress: { chap: 8, ts: ts - 10 }, cLang: 'en', folder: 1, tags: ['Action'], ts, createTs: 1, id: ID,
   };
 }
 
@@ -22,7 +22,7 @@ function mutate(entry, meta, now) {
   const lib = emptyLibrary();
   lib.entries.set(ID, entry); lib.meta.set(ID, meta); lib.order = [ID];
   const op = R.int(0, 5);
-  if (op === 0) editEntry(lib, ID, { folder: R.pick([1, 2, 4]), tags: [R.int(1, 9)] }, now);
+  if (op === 0) editEntry(lib, ID, { folder: R.pick([1, 2, 4]), tags: [R.pick(['Action', 'Murim', 'Isekai', 'Romance'])] }, now);
   else if (op === 1) setProgress(lib, ID, (entry.progress?.chap ?? 0) + R.pick([0.5, 1, 2]), { now });
   else if (op === 2) setProgress(lib, ID, R.int(1, 30), { manual: true, now });
   else if (op === 3) { // release check (the real one): latest/next + ts bump, rest untouched
@@ -131,11 +131,11 @@ test('manual correction backwards wins and later reading continues from it', () 
 test('a release check on one machine does not clobber a tag edit made on another', () => {
   const lib = emptyLibrary(); addEntry(lib, baseEntry(1000));
   const a = structuredClone(lib), b = structuredClone(lib);
-  editEntry(a, ID, { tags: [7, 8] }, 2000); // laptop, offline
+  editEntry(a, ID, { tags: ['Murim', 'Isekai'] }, 2000); // laptop, offline
   let e = withField(b.entries.get(ID), 'latest', { chap: 12, ts: 5000 }); // desktop release check, later
   b.entries.set(ID, withField(e, 'ts', 5000));
   for (const r of [mergeLibraries(a, b), mergeLibraries(b, a)]) {
-    assert.deepEqual(r.entries.get(ID).tags, [7, 8]);
+    assert.deepEqual(r.entries.get(ID).tags, ['Murim', 'Isekai']);
     assert.equal(r.entries.get(ID).latest.chap, 12);
     assert.equal(r.entries.get(ID).ts, 5000);
   }
@@ -297,11 +297,11 @@ test('offline edits of different fields on two devices both survive (folder here
   const lib = emptyLibrary(); addEntry(lib, baseEntry(1000));
   const laptop = structuredClone(lib), desktop = structuredClone(lib);
   editEntry(laptop, ID, { folder: 4 }, 2000);            // moved to Completed
-  editEntry(desktop, ID, { tags: [1, 7], score: 9 }, 3000); // later, other fields
+  editEntry(desktop, ID, { tags: ['Action', 'Murim'], score: 9 }, 3000); // later, other fields
   for (const r of [mergeLibraries(laptop, desktop), mergeLibraries(desktop, laptop)]) {
     const e = r.entries.get(ID);
     assert.equal(e.folder, 4);
-    assert.deepEqual(e.tags, [1, 7]);
+    assert.deepEqual(e.tags, ['Action', 'Murim']);
     assert.equal(e.score, 9);
   }
   // the same field edited on both: the later edit wins

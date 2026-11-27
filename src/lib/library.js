@@ -1,9 +1,9 @@
 // Pure library operations: import planning (dry run + apply), backup export, local edits.
 
-import { parseExport, referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
-import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels, seriesKey } from './merge.js';
+import { referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
+import { mergeLibraries, editTs, metaOf, emptyLabels, seriesKey } from './merge.js';
 import { docOf, libFromDoc } from './sync.js';
-import { normalizeEntry } from './labels.js';
+import { readMangaPin } from './mangapin-import.js';
 
 export function emptyLibrary() {
   return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), days: {}, seen: {}, layoutTs: 0 };
@@ -30,26 +30,8 @@ function readImportFile(text) {
   }
   // a library.json snapshot from the server's backups folder: its covers are on the server already
   if (d && d.format === 'shiori-library') return { kind: 'snapshot', lib: libFromDoc(d, 'this snapshot'), covers: new Map(), problems: [] };
-  const parsed = parseExport(text);
-  // A MangaPin entry's rest fields carry MangaPin's ts; its progress is a plain read event.
-  return { kind: 'mangapin', lib: libFromParsed(parsed, (obj) => ({ r: typeof obj.ts === 'number' ? obj.ts : 0 })), covers: parsed.imgs, problems: parsed.problems };
-}
-
-/** Library built from a parsed MangaPin export (duplicate ids inside the file are merged). */
-function libFromParsed(parsed, metaFor) {
-  const lib = emptyLibrary();
-  for (const { id, obj: raw } of parsed.entries) {
-    const obj = normalizeEntry(raw); // MangaPin tag numbers -> names
-    const prev = lib.entries.get(id);
-    const m = metaFor(obj);
-    if (prev) {
-      const r = mergeEntry(prev, lib.meta.get(id), obj, m);
-      lib.entries.set(id, r.entry); lib.meta.set(id, r.meta);
-    } else {
-      lib.entries.set(id, obj); lib.meta.set(id, m); lib.order.push(id);
-    }
-  }
-  return lib;
+  const mp = readMangaPin(text); // the one MangaPin -> Shiori conversion
+  return { kind: 'mangapin', lib: { ...emptyLibrary(), order: mp.order, entries: mp.entries, meta: mp.meta }, covers: mp.covers, problems: mp.problems };
 }
 
 const short = (e) => ({ id: e.id, name: typeof e.name === 'string' ? e.name : '', siteId: e.siteId });
