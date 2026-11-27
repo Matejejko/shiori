@@ -8,7 +8,7 @@ import { syncOnce } from './lib/sync.js';
 import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry, countRead } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
-import { locate, trackVisit, seriesOf, seenKey, seenFor, noteSeen } from './lib/tracker.js';
+import { locate, trackVisit, seriesOf, seenFor, noteSeen } from './lib/tracker.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName, matchUrl } from './lib/adapters.js';
 
@@ -129,12 +129,11 @@ api.tabs.onUpdated.addListener((tabId, change, tab) => {
       await store.saveLibrary(lib);
     } else if (!locate(lib, url).entry) {
       // not pinned (yet): remember how far you read, so pinning later starts there
-      const { seen = {} } = await api.storage.local.get('seen');
-      if (noteSeen(seen, url)) {
-        await api.storage.local.set({ seen });
+      if (noteSeen(lib.seen, url)) {
         // the reading log counts it too, but only on known manga sites (a "chapter-3" path
         // on any other site is not reading)
-        if (!seriesOf(url)?.generic) { countRead(lib, await store.deviceId()); await store.saveLibrary(lib); }
+        if (!seriesOf(url)?.generic) countRead(lib, await store.deviceId());
+        await store.saveLibrary(lib);
       }
     }
   }).catch((e) => console.warn('[shiori track]', e));
@@ -278,8 +277,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
   const now = Date.now();
   // furthest of: the chapter on this page, the chapters you read before pinning
   const here = seriesOf(tab.url);
-  const { seen = {} } = await api.storage.local.get('seen');
-  const before = seenFor(seen, siteId, slug);
+  const before = seenFor(lib0.seen, siteId, slug);
   const page = here && typeof here.chap === 'number' ? { chap: here.chap, slug: here.generic ? undefined : here.chapSlug } : null;
   const readSoFar = [page, before].filter(Boolean).sort((a, b) => b.chap - a.chap)[0] || null;
   return store.withLock(async () => {
@@ -299,7 +297,6 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
     if (cover) await store.putCovers([[cover.key, cover.b64]]);
     addEntry(lib, e, now);
     await store.saveLibrary(lib);
-    if (before) { delete seen[seenKey(siteId, slug)]; await api.storage.local.set({ seen }); }
     // look up its chapters right away instead of waiting for the 6-hourly check
     if (getAdapter(siteId)?.list) setTimeout(() => runReleaseChecks({ ids: [e.id], force: true }).catch(() => {}), 0);
     return { pinned: true, id: e.id, cover: !!cover };
@@ -321,7 +318,7 @@ const handlers = {
     let seen = null;
     if (!entry) {
       const s = seriesOf(tab.url || '');
-      if (s) seen = seenFor((await api.storage.local.get('seen')).seen, s.siteId, s.slug);
+      if (s) seen = seenFor(lib.seen, s.siteId, s.slug);
     }
     return { url: tab.url, title: tab.title, entry, match, seen, site: match ? siteName(match.siteId) : null };
   },
@@ -391,6 +388,7 @@ const handlers = {
       entries: lib.order.map((id) => lib.entries.get(id)),
       labels: lib.labels,
       days: lib.days,
+      seen: lib.seen,
       relerr,
       urls: Object.fromEntries(lib.order.map((id) => {
         const e = lib.entries.get(id);

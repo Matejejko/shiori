@@ -37,3 +37,30 @@ test('reading log: streaks, month/year totals, Monday weeks', () => {
   assert.equal(computeReading(days, at(2026, 11, 28)).streak, 0);
   assert.equal(computeReading({}, at(2026, 11, 28)).since, null);
 });
+
+test('read-before-pin memory: merges in any order, keeps the furthest chapter, prunes the same way everywhere', async () => {
+  const { mergeSeen } = await import('../src/lib/merge.js');
+  const { SEEN_MAX, SEEN_TTL } = await import('../src/lib/tracker.js');
+  const day = 86400e3, T = Date.UTC(2026, 10, 27);
+  const a = { 'arena|x': { chap: 23, slug: 'x-chapter-23', ts: T - day }, 'old|y': { chap: 5, ts: T - SEEN_TTL - 2 * day } };
+  const b = { 'arena|x': { chap: 20, slug: 'x-chapter-20', ts: T }, 'asura|z': { chap: 7, ts: T } };
+  const c = Object.fromEntries(Array.from({ length: SEEN_MAX }, (_, i) => [`s|n${i}`, { chap: 1, ts: T - day - i }]));
+  for (const [x, y, z] of [[a, b, c], [b, c, a], [c, a, b]]) {
+    assert.deepEqual(mergeSeen(mergeSeen(x, y), z), mergeSeen(a, mergeSeen(b, c)));
+  }
+  const m = mergeSeen(a, b);
+  assert.deepEqual(m['arena|x'], { chap: 23, slug: 'x-chapter-23', ts: T }); // furthest chapter, latest time
+  assert.equal(m['old|y'], undefined);
+  assert.equal(Object.keys(mergeSeen(m, c)).length, SEEN_MAX);
+});
+
+test('stats: a series read unpinned on one device and pinned on another counts once', async () => {
+  const { computeStats } = await import('../src/lib/stats.js');
+  const now = Date.now();
+  const entries = [{ siteId: 'arena', slug: 'pinned-one', progress: { chap: 30, ts: now }, folder: 1 }];
+  const seen = { 'arena|pinned-one': { chap: 23, ts: now }, 'arena|other': { chap: 10, ts: now } };
+  const s = computeStats(entries, seen, now);
+  assert.equal(s.chapters, 30);
+  assert.equal(s.chaptersAll, 40);
+  assert.equal(s.unpinnedSeries, 1);
+});

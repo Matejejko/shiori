@@ -345,9 +345,7 @@ function weekChart(perWeek) {
 
 async function renderStats() {
   if (!state.lib) return;
-  let seen = {};
-  try { seen = (await api.storage.local.get('seen')).seen || {}; } catch { /* page without storage access */ }
-  const s = computeStats(state.lib.entries, seen);
+  const s = computeStats(state.lib.entries, state.lib.seen || {});
   const r = computeReading(state.lib.days);
   const box = clear($('stats'));
   box.append(

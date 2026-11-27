@@ -328,3 +328,23 @@ test('a bare server address finds the WebDAV folder; a non-WebDAV address explai
   await assert.rejects(findDavRoot({ url: 'https://x.test/', user: 'u', token: 't', fetch: f405 }), /not a WebDAV folder.*remote\.php\/webdav/);
   await assert.rejects(findDavRoot({ url: 'https://dav.test/', user: s.user, token: 'wrong', fetch: s.fetch }), /check username and app token/);
 });
+
+test('reading a series unpinned on one device: pinning it on the other starts at that chapter', async () => {
+  const { noteSeen, seenFor } = await import('../src/lib/tracker.js');
+  const dav = server();
+  const a = new Store(new MemoryArea()), b = new Store(new MemoryArea());
+  const la = await a.loadLibrary();
+  assert.equal(noteSeen(la.seen, 'https://arenascan.com/e2e-seen-chapter-23/'), true);
+  await a.saveLibrary(la);
+  await syncOnce({ store: a, dav: dav() }); await syncOnce({ store: b, dav: dav() });
+  const lb = await b.loadLibrary();
+  assert.equal(seenFor(lb.seen, 'arena', 'e2e-seen').chap, 23);
+  // an older install kept it outside the library: it is picked up and then moved in
+  const old = new Store(new MemoryArea());
+  await old.area.set({ seen: { 'arena|legacy': { chap: 4, ts: Date.now() } } });
+  const lo = await old.loadLibrary();
+  assert.equal(lo.seen['arena|legacy'].chap, 4);
+  await old.saveLibrary(lo);
+  assert.equal((await old.area.get('seen')).seen, undefined);
+  assert.equal((await old.loadLibrary()).seen['arena|legacy'].chap, 4);
+});

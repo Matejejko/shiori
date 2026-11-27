@@ -34,6 +34,7 @@
 
 import { withField } from './mangapin.js';
 import { slugKey } from './adapters.js';
+import { SEEN_MAX, SEEN_TTL } from './tracker.js';
 
 const GROUP = new Set(['progress', 'latest', 'next', 'ts']);
 const NEG = -Infinity;
@@ -201,6 +202,33 @@ export function mergeEntry(a, aMeta, b, bMeta) {
 export function emptyLabels() { return { folder: {}, type: {}, tag: {} }; }
 
 /**
+ * Series read but not pinned ({ seriesKey: {chap, slug?, ts} }, see tracker.noteSeen), synced so
+ * pinning on another device starts at the right chapter and stats agree. Per series: the furthest
+ * chapter (with its slug) and the latest time. Then, deterministically from the merged set alone:
+ * entries older than SEEN_TTL before its newest one go, and only the newest SEEN_MAX stay.
+ */
+export function mergeSeen(a, b) {
+  const out = new Map();
+  for (const src of [a, b]) {
+    if (!isObj(src)) continue;
+    for (const [k, r] of Object.entries(src)) {
+      if (!isObj(r) || typeof r.chap !== 'number' || typeof r.ts !== 'number') continue;
+      const o = out.get(k);
+      if (!o) { out.set(k, r); continue; }
+      const best = r.chap > o.chap || (r.chap === o.chap && canonical(r) > canonical(o)) ? r : o;
+      const m = { chap: best.chap };
+      if (best.slug !== undefined) m.slug = best.slug;
+      m.ts = Math.max(o.ts, r.ts);
+      out.set(k, m);
+    }
+  }
+  const newest = Math.max(0, ...[...out.values()].map((r) => r.ts));
+  const keep = [...out].filter(([, r]) => r.ts > newest - SEEN_TTL)
+    .sort((x, y) => cmp(y[1].ts, x[1].ts) || cmp(x[0], y[0])).slice(0, SEEN_MAX);
+  return Object.fromEntries(keep.sort((x, y) => cmp(x[0], y[0])));
+}
+
+/**
  * Reading log: chapters read per device per local day, { device: { 'YYYY-MM-DD': n } }. Each
  * device only ever raises its own counts, so the merge is a max per (device, day) and the
  * library's total for a day is the sum over devices. ~20 bytes per device per day read.
@@ -269,7 +297,7 @@ export function mergeLibraries(base, other) {
     if (entries.has(id) && !placed.has(id)) { placed.add(id); order.push(id); }
   }
   return {
-    order, entries, meta, tombs, labels: mergeLabels(base.labels, other.labels), days: mergeDays(base.days, other.days),
+    order, entries, meta, tombs, labels: mergeLabels(base.labels, other.labels), days: mergeDays(base.days, other.days), seen: mergeSeen(base.seen, other.seen),
     layoutTs: Math.max(num(base.layoutTs), num(other.layoutTs), 0),
   };
 }
@@ -324,5 +352,6 @@ export function libraryFingerprint(lib) {
     t: [...lib.tombs.entries()].sort((x, y) => cmp(x[0], y[0])),
     l: lib.labels,
     d: mergeDays(lib.days, {}),
+    s: mergeSeen(lib.seen, {}),
   });
 }

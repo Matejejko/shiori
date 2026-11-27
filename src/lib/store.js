@@ -13,7 +13,7 @@
 
 import { emptyLabels } from './merge.js';
 
-const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), days: {}, layoutTs: 0 });
+const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), days: {}, seen: undefined, layoutTs: 0 });
 
 export const DEFAULT_CFG = {
   davUrl: '',          // full WebDAV root of the user's space, e.g. https://host/remote.php/webdav/
@@ -69,6 +69,8 @@ export class Store {
       tombs: new Map(Object.entries(idx.tombs || {})),
       labels: idx.labels || emptyLabels(),
       days: idx.days || {},
+      // read-before-pin memory: synced since it moved into the library; older versions kept it under 'seen'
+      seen: idx.seen || (await this.area.get('seen')).seen || {},
       layoutTs: idx.layoutTs || 0,
     };
   }
@@ -93,6 +95,7 @@ export class Store {
       tombs: Object.fromEntries(lib.tombs),
       labels: lib.labels || emptyLabels(),
       days: lib.days || {},
+      seen: lib.seen || {},
       layoutTs: lib.layoutTs || 0,
     };
     if (!silent) {
@@ -100,7 +103,8 @@ export class Store {
       writes.dseq = (dseq || 0) + 1; // separate key so it never races sync-state writes
     }
     await this.area.set(writes);
-    if (removed.length) await this.area.remove(removed);
+    // + 'seen': the old, unsynced home of the read-before-pin memory (now in the index)
+    await this.area.remove([...removed, 'seen']);
     // covers no entry uses any more (deleted series) go too; the server keeps every cover, so
     // snapshots stay restorable. (Callers store a new cover before the entry that uses it.)
     const used = new Set([...lib.entries.values()].map((e) => e && e.img));

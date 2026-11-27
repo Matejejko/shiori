@@ -34,6 +34,7 @@ export function docOf(lib, now = Date.now()) {
     tombs: sortObj(lib.tombs),
     labels: lib.labels || emptyLabels(),
     days: lib.days || {},
+    seen: lib.seen || {},
     layoutTs: lib.layoutTs || 0,
   };
 }
@@ -65,6 +66,7 @@ export function libFromDoc(d, what = 'library') {
     tombs: new Map(Object.entries(d.tombs || {}).filter(([, t]) => typeof t === 'number')),
     labels: d.labels || emptyLabels(),
     days: d.days && typeof d.days === 'object' && !Array.isArray(d.days) ? d.days : {},
+    seen: d.seen && typeof d.seen === 'object' && !Array.isArray(d.seen) ? d.seen : {},
     layoutTs: typeof d.layoutTs === 'number' ? d.layoutTs : 0,
   };
 }

@@ -5,7 +5,7 @@ import { mergeLibraries, mergeEntry, editTs, metaOf, emptyLabels, seriesKey } fr
 import { docOf, libFromDoc } from './sync.js';
 
 export function emptyLibrary() {
-  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), days: {}, layoutTs: 0 };
+  return { order: [], entries: new Map(), meta: new Map(), tombs: new Map(), labels: emptyLabels(), days: {}, seen: {}, layoutTs: 0 };
 }
 
 const BACKUP_FORMAT = 'shiori-backup';

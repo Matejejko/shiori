@@ -221,7 +221,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const rd = await ctx.newPage();
     await rd.goto('https://arenascan.com/e2e-seen-chapter-23/');
     for (let i = 0; i < 50; i++) {
-      const seen = await sw.evaluate(async () => (await chrome.storage.local.get('seen')).seen || {});
+      const seen = await sw.evaluate(async () => (await chrome.storage.local.get('lib')).lib?.seen || {});
       if (Object.values(seen).some((x) => x.chap === 23)) break;
       await new Promise((r) => setTimeout(r, 100));
     }

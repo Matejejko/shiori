@@ -1,7 +1,7 @@
 // Library statistics for the Stats page. Pure: entries (+ the local "read before pinning"
 // memory) in, numbers out.
 
-import { SEEN_TTL } from './tracker.js';
+import { SEEN_TTL, seenKey } from './tracker.js';
 
 // Shiori does not time your reading; hours are an estimate from chapters read.
 export const MIN_PER_CHAPTER = 2.5;
@@ -16,7 +16,9 @@ function top(map, n) {
 
 export function computeStats(entries, seen = {}, now = Date.now()) {
   const chapters = entries.reduce((s, e) => s + read(e), 0);
-  const unpinned = Object.values(seen || {}).filter((r) => r && num(r.chap) && now - r.ts < SEEN_TTL);
+  // a series pinned since (on any device) is counted once, as pinned
+  const pinned = new Set(entries.map((e) => seenKey(e.siteId, e.slug)));
+  const unpinned = Object.entries(seen || {}).filter(([k, r]) => !pinned.has(k) && r && num(r.chap) && now - r.ts < SEEN_TTL).map(([, r]) => r);
   const unpinnedChapters = unpinned.reduce((s, r) => s + Math.floor(r.chap), 0);
   const folders = new Map(), sites = new Map(), tags = new Map();
   let waiting = 0, withNew = 0, notStarted = 0, activeWeek = 0, added30 = 0, finishedYear = 0, longest = null;

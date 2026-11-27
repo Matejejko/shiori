@@ -99,7 +99,7 @@ export function trackVisit(lib, url, now = Date.now()) {
 // ---- reading before pinning -------------------------------------------------------------
 
 const GENERIC_CHAPTER_TAIL = /(?:\/|-)(?:chapter|chap|ch|episode|ep)[-_ .]?\d[^/]*\/?$/i;
-const SEEN_MAX = 100;
+export const SEEN_MAX = 100;
 export const SEEN_TTL = 30 * 86400e3; // forget reads you never pinned after 30 days
 
 /** Series identity (+ chapter if it is a chapter page) for any URL, pinned or not. */

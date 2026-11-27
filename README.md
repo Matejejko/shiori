@@ -149,6 +149,11 @@ known sites) and synced, so it is your total. Stored as one number per device pe
 version. Below it: totals from your library (chapters read, waiting, folders, sites, tags, scores).
 Time is an estimate (2.5 min per chapter), not measured.
 
+Everything on the Stats page is the same on every synced device: the library, the reading log and the
+read-before-pin memory (series you read without pinning: furthest chapter per series, the newest 100,
+30 days) all live in `library.json`. So a series you started unpinned on one PC and pin on the other
+starts at the right chapter there.
+
 ## Moving a series to another site
 
 Sites go down or change domain. In a series' window: *Edit details* → **Move to another site** → paste the
