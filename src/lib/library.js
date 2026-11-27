@@ -1,7 +1,7 @@
 // Pure library operations: import planning (dry run + apply), backup export, local edits.
 
 import { referencedImgKeys, verifyCover, withField, ID_RE } from './mangapin.js';
-import { mergeLibraries, editTs, metaOf, emptyLabels, seriesKey } from './merge.js';
+import { mergeLibraries, metaOf, tombTime, emptyLabels, seriesKey } from './merge.js';
 import { docOf, libFromDoc } from './sync.js';
 import { readMangaPin } from './mangapin-import.js';
 
@@ -97,7 +97,7 @@ export function planImport(local, localCovers, text, mode, now = Date.now(), sou
     const tombs = new Map(local.tombs);
     for (const [id, e] of local.entries) {
       if (keep.has(id)) continue;
-      tombs.set(id, Math.max(now, editTs(e, local.meta.get(id)) + 1));
+      tombs.set(id, tombTime(metaOf(e, local.meta.get(id)), now));
       summary.removed.push(short(e));
     }
     for (const id of file.entries.keys()) {
@@ -105,7 +105,7 @@ export function planImport(local, localCovers, text, mode, now = Date.now(), sou
       tombs.delete(id);
       // keeping/restoring a series is a user decision as of now: it must outlive any
       // tombstone another device still has (rs/u only decide deletes, not field values)
-      file.meta.set(id, { ...file.meta.get(id), u: now, rs: now });
+      file.meta.set(id, { ...file.meta.get(id), rs: now });
     }
     const kept = { ...local, entries: new Map([...local.entries].filter(([id]) => keep.has(id))), tombs: new Map() };
     const merged = mergeLibraries(file, kept);
@@ -176,11 +176,10 @@ export function editEntry(lib, id, patch, now = Date.now()) {
   out = withField(out, 'ts', ts);
   lib.entries.set(id, out);
   const m = metaOf(e, lib.meta.get(id));
-  // only the edited fields get the new time; the rest keep theirs (b). r still moves, so a
-  // device on an older Shiori (which merges the whole group by r) also sees this as the newest edit
+  // only the edited fields get the new time; the rest keep the base time r
   const f = { ...(m.f || {}) };
   for (const k of edited) f[k] = ts;
-  lib.meta.set(id, metaOf(out, { ...m, r: ts, b: m.b ?? m.r, f, u: Math.max(m.u, ts) }));
+  lib.meta.set(id, metaOf(out, { ...m, f }));
   return out;
 }
 
@@ -228,7 +227,7 @@ export function setProgress(lib, id, chap, { manual = false, slug, now = Date.no
   const m = metaOf(e, lib.meta.get(id));
   // the new read is newer than every earlier event and (auto) further than all of them,
   // so it dominates the whole frontier
-  const meta = { ...m, u: Math.max(m.u, ts) };
+  const meta = { ...m };
   delete meta.pf; delete meta.pm;
   if (manual) meta.pm = ts;
   else if (m.pm !== undefined) meta.pm = m.pm;
@@ -239,7 +238,7 @@ export function setProgress(lib, id, chap, { manual = false, slug, now = Date.no
 export function deleteEntry(lib, id, now = Date.now()) {
   const e = lib.entries.get(id);
   if (!e) return false;
-  lib.tombs.set(id, Math.max(now, editTs(e, lib.meta.get(id)) + 1));
+  lib.tombs.set(id, tombTime(metaOf(e, lib.meta.get(id)), now));
   lib.entries.delete(id);
   lib.meta.delete(id);
   lib.order = lib.order.filter((x) => x !== id);

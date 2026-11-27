@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { prng } from './helpers.mjs';
-import { mergeEntry, mergeLibraries, libraryFingerprint, metaOf, canonical, editTs } from '../src/lib/merge.js';
+import { mergeEntry, mergeLibraries, libraryFingerprint, metaOf, canonical } from '../src/lib/merge.js';
 import { emptyLibrary, editEntry, setProgress, deleteEntry, addEntry } from '../src/lib/library.js';
 import { withField } from '../src/lib/mangapin.js';
 import { applyChapters } from '../src/lib/releases.js';
@@ -162,7 +162,7 @@ test('deletes are final everywhere; only an explicit restore beats them', () => 
 
   // a restore (replace import) after the delete does, and survives the other device's tombstone
   const e = structuredClone(lib);
-  e.meta.set(ID, { ...e.meta.get(ID), rs: 4000, u: 4000 });
+  e.meta.set(ID, { ...e.meta.get(ID), rs: 4000 });
   for (const r of [mergeLibraries(a, e), mergeLibraries(e, a)]) assert.equal(r.entries.has(ID), true);
   // reading after the restore keeps it restored
   const g = mergeLibraries(a, e); setProgress(g, ID, 41, { now: 4500 });
@@ -316,4 +316,19 @@ test('offline edits of different fields on two devices both survive (folder here
   assert.equal(cd.entries.get(ID).score, 7); assert.equal(cd.entries.get(ID).name, 'New name');
   editEntry(cd, ID, { score: undefined }, 2200);
   assert.equal('score' in mergeLibraries(cd, c).entries.get(ID), false);
+});
+
+test('bookkeeping per series is {r, f?, pm?, pf?, rs?}; older records (u, b, bumped r) read losslessly', () => {
+  const lib = emptyLibrary(); addEntry(lib, baseEntry(1000));
+  editEntry(lib, ID, { folder: 2 }, 2000);
+  setProgress(lib, ID, 9, { now: 2100 });
+  deleteEntry(structuredClone(lib), ID, 2200);
+  const m = metaOf(lib.entries.get(ID), lib.meta.get(ID));
+  for (const k of Object.keys(m)) assert.ok(['r', 'f', 'pm', 'pf', 'rs'].includes(k), `unexpected bookkeeping field ${k}`);
+  assert.equal(m.r, 1000); // an edit does not move the base time; the field gets its own
+  assert.deepEqual(m.f, { folder: 2000 });
+  // an older record: r was bumped by the edit, b held the base, u the last activity
+  const old = metaOf(baseEntry(1000), { r: 2000, b: 1000, f: { folder: 2000 }, u: 2100 });
+  assert.deepEqual(old, { r: 1000, f: { folder: 2000 } });
+  assert.deepEqual(metaOf(baseEntry(1000), { r: 1500 }), { r: 1500 });
 });

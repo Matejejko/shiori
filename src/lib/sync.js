@@ -13,7 +13,8 @@ const FORMAT = 'shiori-library';
 // Bump when library.json changes shape (and teach libFromDoc the old one). A device that meets a
 // newer version stops syncing instead of rewriting the file in a shape it doesn't understand.
 // 2: tags are names (1: MangaPin tag numbers, converted when read); labels are folder names only.
-export const LIB_VERSION = 2;
+// 3: per-series bookkeeping is {r, f, pm, pf, rs}; older u/b are read and dropped (merge.metaOf).
+export const LIB_VERSION = 3;
 const pathsFor = (dir = REMOTE_DIR) => ({ DIR: dir, DOC: `${dir}/library.json`, COVERS: `${dir}/covers`, BACKUPS: `${dir}/backups` });
 // Server-side snapshots of library.json (the undo for a final delete or a wrong replace import):
 // the server's copy is saved before the first overwrite of each day and before the push that

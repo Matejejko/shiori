@@ -61,7 +61,7 @@ function toMangaPin(text) {
     throw new Error('This is not a Shiori backup. (Is it already a MangaPin export?)');
   }
   if (!lib || lib.format !== 'shiori-library' || !Array.isArray(lib.entries)) throw new Error('The library in this file is damaged.');
-  if (!(typeof lib.version === 'number' && lib.version <= 2)) throw new Error('This library was made by a newer Shiori. Get the newest version of this converter.');
+  if (!(typeof lib.version === 'number' && lib.version <= 3)) throw new Error('This library was made by a newer Shiori. Get the newest version of this converter.');
   // Shiori stores tags as names; MangaPin only knows its own numbered tags
   let droppedTags = 0;
   const entries = lib.entries.filter((e) => e && typeof e === 'object' && typeof e.id === 'string').map((e) => {

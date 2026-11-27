@@ -181,7 +181,7 @@ test('data from before format 2 (MangaPin tag numbers) is upgraded once, by vers
   // server: a format-1 library.json is upgraded; a format-2 one is read exactly as written
   const doc = fromDoc(JSON.stringify({ format: 'shiori-library', version: 1, entries: [e], labels: { folder: {}, type: {}, tag: {} } }));
   assert.deepEqual(doc.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Tag 999']);
-  assert.equal(JSON.parse(toDoc(doc)).version, 2);
+  assert.equal(JSON.parse(toDoc(doc)).version, 3);
   const v2 = { ...e, tags: ['fantasy', 'Action'] }; // format 2 is not re-interpreted, not even cleaned up again
   assert.deepEqual(fromDoc(JSON.stringify({ format: 'shiori-library', version: 2, entries: [v2] })).entries.get('OldTagsAA1').tags, ['fantasy', 'Action']);
 });

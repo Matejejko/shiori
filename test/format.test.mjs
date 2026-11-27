@@ -127,8 +127,8 @@ for (const fx of exportFixtures()) {
     assert.equal(await storeContent(b), await storeContent(a));
     const la = await a.loadLibrary(), lb = await b.loadLibrary();
     for (const id of la.order) {
-      const { rs, u, ...rest } = metaOf(lb.entries.get(id), lb.meta.get(id)); // the restore marks every entry restored
-      const { rs: rsA, u: ua, ...restA } = metaOf(la.entries.get(id), la.meta.get(id));
+      const { rs, ...rest } = metaOf(lb.entries.get(id), lb.meta.get(id)); // the restore marks every entry restored
+      const { rs: rsA, ...restA } = metaOf(la.entries.get(id), la.meta.get(id));
       assert.equal(canonical(rest), canonical(restA));
     }
   });

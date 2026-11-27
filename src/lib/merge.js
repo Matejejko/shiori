@@ -26,11 +26,10 @@
 // Entries are never reshaped: the winner's object is copied with its own key order and only
 // the three group fields (+ts) are replaced in place (or inserted in MangaPin's field order).
 //
-// Sidecar meta per id: { r, b?, f?, pm?, u, pf?, rs? } — rest time (latest rest edit; b = time of
-// the rest fields without their own time in f, defaults to r), manual-correction time, last user
-// edit/read time (a delete's tombstone is set after it), extra frontier events, restore time
-// (the only thing that beats an older tombstone). It lives in
-// Shiori's storage and library.json, next to the entries (never inside them).
+// Sidecar meta per id: { r, f?, pm?, pf?, rs? } — base edit time of the rest fields (defaults to
+// entry.ts), edit times of single rest fields that differ from it, manual-correction time, extra
+// progress frontier events, restore time (the only thing that beats an older tombstone). It lives
+// in Shiori's storage and library.json, next to the entries (never inside them).
 
 import { withField } from './mangapin.js';
 import { slugKey } from './adapters.js';
@@ -57,28 +56,29 @@ function restOf(e) {
   return o;
 }
 
+/**
+ * Normalized bookkeeping of one series. Also reads older records: `b` held the base time while
+ * `r` was bumped on every edit (the edited fields are in `f` either way, so `b` is the base), and
+ * `u` (last activity) is gone: a delete is final unless restored, so only `rs` matters for it.
+ */
 export function metaOf(entry, meta) {
-  const r = typeof meta?.r === 'number' ? meta.r : num(entry?.ts) === NEG ? 0 : entry.ts;
+  const r = typeof meta?.b === 'number' ? meta.b : typeof meta?.r === 'number' ? meta.r : num(entry?.ts) === NEG ? 0 : entry.ts;
   // pm: manual-correction time (older builds called it `pe`, with 0 meaning "none")
   const pm = typeof meta?.pm === 'number' ? meta.pm : typeof meta?.pe === 'number' && meta.pe > 0 ? meta.pe : NEG;
   const rs = typeof meta?.rs === 'number' ? meta.rs : NEG;
-  const u = Math.max(typeof meta?.u === 'number' ? meta.u : NEG, r, num(entry?.progress?.ts), rs);
   const pf = Array.isArray(meta?.pf) ? meta.pf.filter((x) => isObj(x)) : [];
-  const out = { r, u };
-  if (pm !== NEG) out.pm = pm;
-  if (rs !== NEG) out.rs = rs;
-  if (typeof meta?.b === 'number' && meta.b !== r) out.b = meta.b;
-  const base = out.b ?? r; // a field time equal to the base says nothing: drop it, so equal states compare equal
-  const f = isObj(meta?.f) ? Object.entries(meta.f).filter(([k, t]) => typeof t === 'number' && t !== base && !GROUP.has(k)) : [];
+  const out = { r };
+  // a field time equal to the base says nothing: drop it, so equal states compare equal
+  const f = isObj(meta?.f) ? Object.entries(meta.f).filter(([k, t]) => typeof t === 'number' && t !== r && !GROUP.has(k)) : [];
   if (f.length) out.f = Object.fromEntries(f.sort((x, y) => cmp(x[0], y[0])));
+  if (pm !== NEG) out.pm = pm;
   if (pf.length) out.pf = pf;
+  if (rs !== NEG) out.rs = rs;
   return out;
 }
 
-/** Time of the last user-intended change (a delete's tombstone is set after it). */
-export function editTs(entry, meta) {
-  return metaOf(entry, meta).u;
-}
+/** The time a delete of this series gets: after its last restore, and not before `now`. */
+export const tombTime = (meta, now = 0) => Math.max(now, (meta.rs ?? 0) + 1);
 
 function compareRest(a, ma, b, mb) {
   return cmp(ma.r, mb.r)
@@ -95,18 +95,18 @@ function withoutField(o, key) {
   return out;
 }
 
-/** Edit time of one rest field: its own (meta.f), else the time of the fields without one. */
-export const fieldTime = (m, k) => (m.f && typeof m.f[k] === 'number' ? m.f[k] : m.b ?? m.r);
+/** Edit time of one rest field: its own (meta.f), else the base time of the fields without one. */
+export const fieldTime = (m, k) => (m.f && typeof m.f[k] === 'number' ? m.f[k] : m.r);
 
 /**
  * Rest fields merge one by one: each is a last-writer-wins register (time, then presence,
  * then value as tie-breaks), so an offline folder change on one device and a tag change on
- * another both survive. Times are kept as base (b, for every field without its own) + f.
+ * another both survive. Times are kept as base (r, for every field without its own) + f.
  */
 function mergeRestFields(a, ma, b, mb) {
   const keys = new Set();
   for (const o of [a, b, ma.f || {}, mb.f || {}]) for (const k of Object.keys(o)) if (!GROUP.has(k)) keys.add(k);
-  const base = Math.max(ma.b ?? ma.r, mb.b ?? mb.r);
+  const base = Math.max(ma.r, mb.r);
   const pick = new Map(), f = {};
   for (const k of [...keys].sort()) {
     const ta = fieldTime(ma, k), tb = fieldTime(mb, k);
@@ -181,13 +181,12 @@ export function mergeEntry(a, aMeta, b, bMeta) {
   if (next !== undefined && out.next !== next) out = withField(out, 'next', next);
   const ts = Math.max(num(a.ts), num(b.ts));
   if (ts !== NEG && out.ts !== ts) out = withField(out, 'ts', ts);
-  const meta = { r: Math.max(ma.r, mb.r), u: Math.max(ma.u, mb.u) };
-  if (rest.base !== meta.r) meta.b = rest.base;
+  const meta = { r: rest.base };
   if (Object.keys(rest.f).length) meta.f = rest.f;
   if (pm !== NEG) meta.pm = pm;
+  if (pf.length) meta.pf = pf;
   const rs = Math.max(ma.rs ?? NEG, mb.rs ?? NEG);
   if (rs !== NEG) meta.rs = rs;
-  if (pf.length) meta.pf = pf;
   return { entry: out, meta };
 }
 
@@ -336,7 +335,7 @@ export function dedupeSeries(entries, meta, tombs, dead = new Map()) {
       const dup = entries.get(id), dm = metaOf(dup, meta.get(id));
       fold(keep, dup, dm);
       // newer than anything that copy has seen, so it stays deleted on every device
-      tombs.set(id, Math.max(num(tombs.get(id)), dm.u + 1));
+      tombs.set(id, Math.max(num(tombs.get(id)), tombTime(dm)));
       entries.delete(id); meta.delete(id);
     }
   }
