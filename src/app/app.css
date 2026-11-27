@@ -219,7 +219,7 @@ dialog#confirm {
 /* ---- folder tabs + settings area ---------------------------------------------------- */
 #folderTabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
 #folderTabs .tab { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
-.tab .count { font-size: 11px; font-weight: 600; color: var(--ink-2); background: var(--line); border-radius: 999px; padding: 0 6px; line-height: 17px; font-variant-numeric: tabular-nums; }
+.tab .count { font-size: 11px; font-weight: 600; color: var(--ink); background: var(--line); border-radius: 999px; padding: 0 6px; line-height: 17px; font-variant-numeric: tabular-nums; }
 .tab.on .count { background: var(--ai-soft); color: var(--ink); }
 .gear { width: var(--ctl-h); padding: 0; display: inline-grid; place-items: center; }
 .gear.on, .gear.on:hover, .gear:popover-open, .gear[aria-expanded=true] { background: var(--ai); border-color: var(--ai); color: var(--ai-ink); }
@@ -280,3 +280,15 @@ body:not(.in-settings) #settingsNav { display: none; }
 .wk-table td, .wk-table th { padding: 2px 12px 2px 0; text-align: left; font-variant-numeric: tabular-nums; }
 :root { --wk-bar: #c2410c; }
 @media (prefers-color-scheme: dark) { :root { --wk-bar: #ea580c; } }
+
+/* ---- phone width ------------------------------------------------------------------------- */
+@media (max-width: 700px) {
+  .top { flex-wrap: wrap; row-gap: 0; }
+  #folderTabs { order: 3; flex: 1 0 100%; overflow-x: auto; scrollbar-width: none; }
+  #folderTabs .tab { min-height: 44px; white-space: nowrap; }
+  .toolbar { grid-template-columns: 1fr; }
+  .viewctl { justify-content: space-between; flex-wrap: wrap; }
+  main { padding-left: var(--s4); padding-right: var(--s4); }
+}
+/* a very long name stays readable in the series window (full name on hover) */
+.ed-title { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

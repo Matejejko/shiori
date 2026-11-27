@@ -30,6 +30,7 @@ function readImportFile(text) {
   }
   // a library.json snapshot from the server's backups folder: its covers are on the server already
   if (d && d.format === 'shiori-library') return { kind: 'snapshot', lib: libFromDoc(d, 'this snapshot'), covers: new Map(), problems: [] };
+  if (!(d && Array.isArray(d.entries) && !d.format)) throw new Error('this is neither a Shiori backup nor a MangaPin export');
   const mp = readMangaPin(text); // the one MangaPin -> Shiori conversion
   return { kind: 'mangapin', lib: { ...emptyLibrary(), order: mp.order, entries: mp.entries, meta: mp.meta }, covers: mp.covers, problems: mp.problems };
 }

@@ -21,7 +21,7 @@ function showTab(name, folder) {
   for (const b of document.querySelectorAll('.tab')) {
     const on = b.dataset.tab === name && (name !== 'library' || (b.dataset.folder ?? '') === state.folder);
     b.classList.toggle('on', on);
-    b.setAttribute('aria-selected', String(on));
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
   }
   for (const p of document.querySelectorAll('.pane')) p.hidden = p.id !== 'tab-' + name;
   try { localStorage.setItem('shiori.tab', name); localStorage.setItem('shiori.folder', state.folder); } catch { /* ignore */ }
@@ -39,7 +39,7 @@ for (const b of $('menu').querySelectorAll('button')) b.addEventListener('click'
 function renderFolderTabs() {
   const nav = $('folderTabs');
   const count = (f) => state.lib.entries.filter((e) => f === '' || String(e.folder) === f).length;
-  const tab = (f, name) => h('button', { type: 'button', role: 'tab', class: 'tab', dataset: { tab: 'library', folder: f } },
+  const tab = (f, name) => h('button', { type: 'button', class: 'tab', dataset: { tab: 'library', folder: f } },
     name, h('span', { class: 'count', text: String(count(f)) }));
   clear(nav).append(tab('', 'All'), ...knownKeys('folder').map((f) => tab(String(f), labelFor('folder', f))));
   if (!document.body.classList.contains('in-settings')) showTab('library', state.folder);
@@ -207,7 +207,7 @@ function openEditor(id) {
     url: h('input', { type: 'url', value: e.url || '', placeholder: urls.series || 'https://…' }),
     folder: h('select', {}, knownKeys('folder').map((v) => h('option', { value: v, text: labelFor('folder', v), selected: v === e.folder }))),
     type: h('select', {}, h('option', { value: '', text: '(none)' }), knownKeys('type').map((v) => h('option', { value: v, text: labelFor('type', v), selected: v === e.type }))),
-    tags: h('details', { class: 'tagpick' }, h('summary'), h('div', { class: 'opts' })),
+    tags: h('details', { class: 'tagpick' }, h('summary'), h('div', { class: 'opts', role: 'group', attrs: { 'aria-label': 'Tags' } })),
     newTag: h('input', { type: 'text', placeholder: 'e.g. Tower Climbing', attrs: { maxlength: 40 } }),
     score: h('input', { type: 'number', step: 'any', value: numOrEmpty(e.score) }),
     startTs: h('input', { type: 'date', value: toDateInput(e.startTs) }),
@@ -232,7 +232,7 @@ function openEditor(id) {
   dlg.append(h('form', { class: 'editor', attrs: { method: 'dialog' }, on: { submit: async (ev) => {
     ev.preventDefault();
     try {
-      if (f.url.value.trim() && !safeHttpUrl(f.url.value.trim())) throw new Error('URL must start with http(s)://');
+      if (f.url.value.trim() !== (init.url ?? '') && f.url.value.trim() && !safeHttpUrl(f.url.value.trim())) throw new Error('URL must start with http(s)://');
       const cur = readForm();
       if (cur.name === '') cur.name = init.name; // an empty name is not a rename
       const patch = formPatch(e, init, cur);
@@ -250,7 +250,7 @@ function openEditor(id) {
         e.img && state.covers[e.img] ? h('img', { class: 'cover', src: coverUrl(e.img, state.covers[e.img]), attrs: { alt: '' } }) : h('span', { class: 'cover tone' }),
         unreadBy(e) > 0 ? h('span', { class: 'badge new', text: `+${fmtChap(unreadBy(e))}` }) : null),
       h('div', { class: 'ed-info' },
-        h('h2', { class: 'ed-title', text: e.name }),
+        h('h2', { class: 'ed-title', text: e.name, attrs: { title: e.name } }),
         h('div', { class: 'line' },
           h('span', { class: 'chip site', text: e.siteId }),
           h('span', { class: 'chip', text: labelFor('folder', e.folder) }),
@@ -302,9 +302,10 @@ function openEditor(id) {
       h('div', { class: 'row tight' },
         h('button', { type: 'button', class: 'danger quiet edit-only', text: 'Delete', on: { click: async () => {
         if (!(await confirmBox(`Delete “${e.name}”?`, 'It is removed from this library and from your other synced devices.', 'Delete'))) return;
-        await send('remove', { id });
+        try { await send('remove', { id }); } catch (err) { msg.textContent = err.message; msg.className = 'small err-text'; return; }
         dlg.close();
         await load();
+        $('q').focus();
       } } }),
         h('button', { type: 'button', class: 'ghost view-only', text: 'Check releases', on: { click: async () => {
         msg.textContent = 'Checking…';
@@ -329,7 +330,7 @@ function openEditor(id) {
 
 const fmtInt = (n) => Math.round(n).toLocaleString();
 function statTile(value, label, sub, cls = '') {
-  return h('div', { class: 'stat-tile ' + cls }, h('div', { class: 'v', text: value }), h('div', { class: 'l', text: label }), sub ? h('div', { class: 'sub', text: sub }) : null);
+  return h('div', { class: 'stat-tile ' + cls }, h('div', { class: 'v', text: value }), h('div', { class: 'l', text: label }), sub ? h('div', { class: 'sub', text: sub, attrs: { title: sub } }) : null);
 }
 const fmtWeek = (t) => new Date(t).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 
@@ -346,15 +347,16 @@ function weekChart(perWeek) {
     const last = i === perWeek.length - 1;
     const bar = h('span', { class: 'wk-bar' });
     bar.style.height = `${w.chapters ? Math.max(2, (w.chapters / max) * 100) : 0}%`;
-    const col = h('div', { class: 'wk-col' + (last ? ' now' : ''), attrs: { tabindex: 0, 'aria-label': `Week of ${fmtWeek(w.start)}: ${w.chapters} chapters` } },
+    const col = h('div', { class: 'wk-col' + (last ? ' now' : '') },
       last && w.chapters ? h('span', { class: 'wk-val', text: fmtInt(w.chapters) }) : null, bar);
-    for (const ev of ['mouseenter', 'focus']) col.addEventListener(ev, () => show(col, w));
-    for (const ev of ['mouseleave', 'blur']) col.addEventListener(ev, () => { tip.hidden = true; });
+    col.addEventListener('mouseenter', () => show(col, w));
+    col.addEventListener('mouseleave', () => { tip.hidden = true; });
     return col;
   });
   return h('figure', { class: 'wk' },
     h('figcaption', { class: 'muted small', text: 'Chapters per week, last 12 weeks' }),
-    h('div', { class: 'wk-plot' }, h('span', { class: 'wk-max muted', text: fmtInt(max) }), ...cols, tip),
+    h('div', { class: 'wk-plot', attrs: { role: 'img', 'aria-label': `Chapters per week for the last 12 weeks: ${perWeek.map((w) => w.chapters).join(', ')}. This week ${perWeek.at(-1).chapters}. See the table below.` } },
+      h('span', { class: 'wk-max muted', attrs: { 'aria-hidden': 'true' }, text: fmtInt(max) }), ...cols, tip),
     h('div', { class: 'wk-axis muted' }, perWeek.map((w, i) => h('span', { text: i % 4 === 0 || i === perWeek.length - 1 ? fmtWeek(w.start) : '' }))),
     h('details', { class: 'wk-table' }, h('summary', { class: 'muted small', text: 'Show as table' }),
       h('table', {}, h('thead', {}, h('tr', {}, h('th', { text: 'Week of' }), h('th', { text: 'Chapters' }))),
@@ -382,7 +384,7 @@ async function renderStats() {
         statTile(fmtInt(s.chaptersAll), 'Chapters incl. unpinned', s.unpinnedSeries ? `+ ${s.unpinnedSeries} series read but not pinned (30 days)` : 'nothing read unpinned in the last 30 days', 'hero'),
         statTile(`≈ ${fmtInt(s.hours)} h`, 'Time reading', `estimate: ${MIN_PER_CHAPTER} min per chapter`, 'hero'),
         statTile(String(s.activeWeek), 'Series read this week'),
-        statTile(fmtChap(s.waiting), 'Chapters waiting', `in ${s.withNew} series with new chapters`),
+        statTile(s.waiting.toLocaleString(undefined, { maximumFractionDigits: 1 }), 'Chapters waiting', `in ${s.withNew} series with new chapters`),
         statTile(s.longest ? fmtChap(s.longest.chap) : '–', 'Longest read', s.longest ? s.longest.name : ''))),
     h('section', { class: 'stat-group' }, h('h2', { text: 'Library' }),
       h('div', { class: 'stat-grid' },
@@ -448,6 +450,7 @@ async function dryRun() {
         try {
           await send('importFile', { text: fileText, mode, source, apply: true, planId: s.planId });
           clear(box).append(h('p', { class: 'ok-text', text: `Imported. Library now has ${(await send('state')).count} entries.` }));
+          fileText = null; $('file').value = ''; // switching Merge/Replace must not re-offer the same file
           state.covers = {};
           await load();
         } catch (e) {
@@ -538,7 +541,7 @@ $('test').addEventListener('click', async () => {
   const msg = $('settingsMsg');
   msg.textContent = 'Testing…'; msg.className = 'small';
   await ensureHostPermission(cfg.davUrl);
-  const r = await send('testConnection', { cfg, token: token || undefined });
+  const r = await send('testConnection', { cfg, token: token || undefined }).catch((e) => ({ ok: false, error: e.message }));
   if (r.ok && r.davUrl) $('settings').davUrl.value = r.davUrl; // a bare server address, completed
   msg.textContent = r.ok ? r.message : r.error;
   msg.className = 'small ' + (r.ok ? 'ok-text' : 'err-text');
@@ -553,10 +556,12 @@ $('grantHosts').addEventListener('click', async () => {
 // labels
 
 function labelRow(kind, key, name) {
+  const builtIn = key !== '' && DEFAULT_LABELS[kind]?.[key] !== undefined; // can be renamed, not removed
   return h('div', { class: 'row tight' },
-    h('input', { class: 'key', type: 'number', step: 1, value: key, attrs: { 'aria-label': `${kind} number` } }),
-    h('input', { class: 'grow', type: 'text', value: name, placeholder: 'name', attrs: { 'aria-label': `${kind} name` } }),
-    h('button', { type: 'button', class: 'ghost icon', text: '✕', attrs: { 'aria-label': 'remove' }, on: { click: (ev) => ev.target.closest('.row').remove() } }));
+    h('input', { class: 'key', type: 'number', step: 1, min: 1, value: key, attrs: { 'aria-label': `${kind} number`, readonly: builtIn } }),
+    h('input', { class: 'grow', type: 'text', value: name, placeholder: builtIn ? DEFAULT_LABELS[kind][key] : 'name', attrs: { 'aria-label': `${kind} name`, maxlength: 40 } }),
+    builtIn ? h('span', { class: 'icon', attrs: { 'aria-hidden': 'true' } })
+      : h('button', { type: 'button', class: 'ghost icon', text: '✕', attrs: { 'aria-label': `remove ${kind} ${key}` }, on: { click: (ev) => ev.target.closest('.row').remove() } }));
 }
 let labelsBase = { folder: {}, type: {}, tag: {} }; // names as rendered: only changes are saved
 function renderLabels() {
@@ -575,11 +580,17 @@ function renderLabels() {
 }
 $('saveLabels').addEventListener('click', async () => {
   const labels = { folder: {} };
+  const fail = (t) => { $('labelsMsg').textContent = t; $('labelsMsg').className = 'small err-text'; };
   for (const card of document.querySelectorAll('.labels .card')) {
+    const kind = card.dataset.kind, used = new Set();
     for (const row of card.querySelectorAll('.rows .row')) {
       const [k, n] = row.querySelectorAll('input');
-      if (k.value === '' || !n.value.trim()) continue;
-      labels[card.dataset.kind][String(Math.trunc(Number(k.value)))] = n.value.trim();
+      if (k.value === '' && !n.value.trim()) continue; // an empty new row
+      const num = Number(k.value);
+      if (!Number.isInteger(num) || num < 1) return fail(`Folder numbers are whole numbers from 1 (“${k.value}”).`);
+      if (used.has(num)) return fail(`Folder ${num} is listed twice: change one number.`);
+      used.add(num);
+      if (n.value.trim()) labels[kind][String(num)] = n.value.trim().slice(0, 40);
     }
   }
   try {
@@ -596,6 +607,7 @@ $('syncNow').addEventListener('click', async () => {
   const r = await send('syncNow').catch((e) => ({ ok: false, error: e.message }));
   if (r && r.skipped) { showTab('settings'); }
   await load();
+  if (r && r.ok === false) { $('sync').textContent = 'Sync failed: ' + r.error; $('sync').title = r.error; }
 });
 let reloadTimer = null;
 api.runtime.onMessage.addListener((m) => {

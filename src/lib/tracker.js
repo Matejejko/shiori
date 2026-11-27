@@ -4,7 +4,7 @@ import { matchUrl, sameSeries, entrySlug, matchChapterForSeries, slugKey } from 
 import { setProgress } from './library.js';
 import { withField } from './mangapin.js';
 
-const CHAP_IN_PATH = /(?:^|[/_-])(?:chapter|chap|ch|episode|ep)[-_ .]?(\d{1,5}(?:[.-]\d{1,2})?)(?=$|[/?#_-])/i;
+const CHAP_IN_PATH = /(?:^|[/_-])(?:chapter|chap|ch|episode|ep)[-_ .]?(\d{1,5}(?:[.-]\d{1,2})?)(?=$|[/?#_.-])/i;
 
 const bareHost = (h) => h.replace(/^www\./, '');
 
@@ -98,7 +98,7 @@ export function trackVisit(lib, url, now = Date.now()) {
 
 // ---- reading before pinning -------------------------------------------------------------
 
-const GENERIC_CHAPTER_TAIL = /(?:\/|-)(?:chapter|chap|ch|episode|ep)[-_ .]?\d[^/]*\/?$/i;
+const GENERIC_CHAPTER_TAIL = /(?:\/|-)(?:chapter|chap|ch|episode|ep)[-_ .]?\d[^/]*(?:\/\d{1,4})?\/?$/i;
 export const SEEN_MAX = 100;
 export const SEEN_TTL = 30 * 86400e3; // forget reads you never pinned after 30 days
 

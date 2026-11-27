@@ -85,10 +85,16 @@ async function davFromSettings() {
 
 function runSync(reason) {
   if (syncRunning) return syncRunning;
+  Promise.resolve(api.alarms.clear('sync-debounce')).catch(() => {}); // the 5-s timer got here first: no second round
   syncRunning = (async () => {
     const cfg = await store.getConfig();
     if (reason !== 'manual' && !cfg.autoSync) return { skipped: 'auto sync off' };
-    const dav = await davFromSettings();
+    let dav;
+    try { dav = await davFromSettings(); } catch (err) { // e.g. an http:// address: say so, don't just not sync
+      const msg = String(err && err.message || err);
+      await store.setSyncState({ lastError: msg, lastAttempt: Date.now() });
+      return { ok: false, error: msg };
+    }
     if (!dav) return { skipped: 'not configured' };
     await store.setSyncState({ lastAttempt: Date.now(), running: true });
     broadcast({ type: 'sync', running: true });
@@ -132,10 +138,11 @@ api.tabs.onUpdated.addListener((tabId, change, tab) => {
       await store.saveLibrary(lib);
     } else if (!locate(lib, url).entry) {
       // not pinned (yet): remember how far you read, so pinning later starts there
-      if (noteSeen(lib.seen, url)) {
-        // the reading log counts it too, but only on known manga sites (a "chapter-3" path
-        // on any other site is not reading)
-        if (!seriesOf(url)?.generic) countRead(lib, await store.deviceId());
+      // known manga sites only: on any other site a "chapter-4" or "ep-12" path is not manga
+      // (a handbook, a podcast), and this memory is synced and counted in your stats
+      const s = seriesOf(url);
+      if (s && !s.generic && noteSeen(lib.seen, url)) {
+        countRead(lib, await store.deviceId());
         await store.saveLibrary(lib);
       }
     }
@@ -160,7 +167,7 @@ async function fetchText(req) {
   try {
     const res = await fetch(req.url, { method: req.method || 'GET', headers: req.headers, body: req.body, credentials: 'omit', signal: ctrl.signal });
     const text = await res.text();
-    if (isBlockedPage(text)) throw new Error(`${host} answered with a bot challenge (Cloudflare) — open the site once in a tab, or check manually`);
+    if (isBlockedPage(text)) throw new Error(`${host} answered with a bot check (Cloudflare), which Shiori can't pass — check this series on the site`);
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${host}`);
     return text;
   } finally { clearTimeout(t); }
@@ -234,12 +241,14 @@ function scrapePage() {
     if (!k.includes('"detail"')) continue; // only this series, not recommendations
     for (const f of ['genres', 'demographics', 'formats', 'tags']) for (const g of Array.isArray(q?.[f]) ? q[f] : []) if (g && g.title) genres.push(String(g.title));
   }
+  const ld = [];
   for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
     const d = json(el);
     for (const o of [d, ...(Array.isArray(d?.['@graph']) ? d['@graph'] : [])].flat()) {
-      if (o && o.genre) genres.push(...[o.genre].flat().map(String));
+      if (o && o.genre) ld.push(...[o.genre].flat().map(String).filter((t) => t.length < 40));
     }
   }
+  if (ld.length <= 30) genres.push(...ld); // more is a list of series (recommendations), not this one
   return { h1, ogTitle: meta('meta[property="og:title"]'), title: document.title, imgs: [...new Set(imgs)].slice(0, 6), genres };
 }
 
@@ -265,7 +274,11 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
   let siteId, slug;
   if (match && match.siteId && !match.slug) throw new Error('This page is not a series or chapter page.');
   if (match && match.siteId) { siteId = match.siteId; slug = match.slug; }
-  else ({ siteId, slug } = seriesOf(tab.url)); // generic site: the series path on that host
+  else {
+    const s = seriesOf(tab.url); // generic site: the series path on that host
+    if (!s || s.slug === '/') throw new Error('Open a series or chapter page of a manga site to pin it.');
+    ({ siteId, slug } = s);
+  }
   let scraped = { h1: '', ogTitle: '', title: tab.title || '', imgs: [] };
   try {
     const [res] = await api.scripting.executeScript({ target: { tabId }, func: scrapePage });
@@ -301,7 +314,7 @@ async function pinTab(tabId, { name: nameOverride, folder = 1 } = {}) {
     addEntry(lib, e, now);
     await store.saveLibrary(lib);
     // look up its chapters right away instead of waiting for the 6-hourly check
-    if (getAdapter(siteId)?.list) setTimeout(() => runReleaseChecks({ ids: [e.id], force: true }).catch(() => {}), 0);
+    if (getAdapter(siteId)?.list && (await store.getConfig()).releaseChecks) setTimeout(() => runReleaseChecks({ ids: [e.id], force: true }).catch(() => {}), 0);
     return { pinned: true, id: e.id, cover: !!cover };
   });
 }
@@ -373,7 +386,7 @@ const handlers = {
       await store.saveLibrary(lib);
       return nid;
     });
-    if (getAdapter(siteId)?.list) runReleaseChecks({ ids: [newId], force: true }).catch(() => {});
+    if (getAdapter(siteId)?.list && (await store.getConfig()).releaseChecks) runReleaseChecks({ ids: [newId], force: true }).catch(() => {});
     return { id: newId, siteId };
   },
   async remove({ id }) {
@@ -438,9 +451,10 @@ const handlers = {
     const saved = await store.getConfig();
     const origin = (u) => { try { return new URL(u).origin; } catch { return null; } };
     // the saved token belongs to the saved server: a different server needs its own (same rule as Test)
-    if (!token && cfg.davUrl && saved.davUrl && origin(cfg.davUrl) !== origin(saved.davUrl) && (await store.getToken())) {
+    if (!token && cfg.davUrl && origin(cfg.davUrl) !== origin(saved.davUrl) && (await store.getToken())) {
       throw new Error('Enter the app token for this server: the saved token is only ever sent to the server it was saved for.');
     }
+    if (cfg.davUrl) new WebDav({ url: cfg.davUrl, user: cfg.user || 'x', token: 'x' }); // throws for http:// etc.
     // a bare server address: store the WebDAV folder it actually serves (when the server says so)
     const tok = token || (await store.getToken());
     if (cfg.davUrl && tok && /^https?:\/\/[^/]+\/?$/i.test(cfg.davUrl)) {

@@ -423,3 +423,11 @@ test('the first upload also checks the clock (the server is empty, its 404 still
   await assert.rejects(syncOnce({ store, dav }), /clock is 180 min ahead/);
   assert.equal([...s.files.keys()].some((p) => p.endsWith('library.json')), false);
 });
+
+test('unknown sites: .html chapter pages are chapters; a reader page number is not part of the series', async () => {
+  const { genericChapter, seriesOf } = await import('../src/lib/tracker.js');
+  assert.equal(genericChapter('/manga/title/chapter-12.html'), 12);
+  assert.equal(genericChapter('/manga/title/chapter-12.5'), 12.5);
+  assert.equal(seriesOf('https://read.example/manga/title/chapter-5/2').slug, '/manga/title');
+  assert.equal(seriesOf('https://read.example/manga/title/chapter-6/').slug, '/manga/title');
+});

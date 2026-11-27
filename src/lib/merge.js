@@ -32,7 +32,7 @@
 // in Shiori's storage and library.json, next to the entries (never inside them).
 
 import { withField } from './mangapin.js';
-import { slugKey } from './adapters.js';
+import { slugKey, getAdapter } from './adapters.js';
 import { SEEN_MAX, SEEN_TTL } from './tracker.js';
 
 const GROUP = new Set(['progress', 'latest', 'next', 'ts']);
@@ -215,6 +215,7 @@ export function mergeSeen(a, b) {
     if (!isObj(src)) continue;
     for (const [k, r] of Object.entries(src)) {
       if (!isObj(r) || typeof r.chap !== 'number' || typeof r.ts !== 'number') continue;
+      if (!getAdapter(k.split('|')[0])) continue; // known manga sites only (see background tracking)
       const o = out.get(k);
       if (!o) { out.set(k, r); continue; }
       const best = r.chap > o.chap || (r.chap === o.chap && canonical(r) > canonical(o)) ? r : o;
