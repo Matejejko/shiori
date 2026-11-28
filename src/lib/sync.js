@@ -6,15 +6,14 @@ import { coverKeyToFile, coverFileToKey, parseCoverKey, verifyCover, referencedI
 import { md5 } from './md5.js';
 import { b64ToBytes, bytesToB64 } from './base64.js';
 import { DavError } from './webdav.js';
-import { entryFromMangaPin } from './mangapin-import.js';
 
 export const REMOTE_DIR = 'Shiori';
 const FORMAT = 'shiori-library';
-// Bump when library.json changes shape (and teach libFromDoc the old one). A device that meets a
-// newer version stops syncing instead of rewriting the file in a shape it doesn't understand.
-// 2: tags are names (1: MangaPin tag numbers, converted when read); labels are folder names only.
-// 3: per-series bookkeeping is {r, f, pm, pf, rs}; older u/b are read and dropped (merge.metaOf).
+// Bump when library.json changes shape. A device that meets a newer version stops syncing instead
+// of rewriting the file in a shape it doesn't understand; an older one (before 0.3) is not read.
+// 3: tags are names, labels are folder names only, per-series bookkeeping is {r, f, pm, pf, rs}.
 export const LIB_VERSION = 3;
+const OLDEST_READ = 3;
 const pathsFor = (dir = REMOTE_DIR) => ({ DIR: dir, DOC: `${dir}/library.json`, COVERS: `${dir}/covers`, BACKUPS: `${dir}/backups` });
 // Server-side snapshots of library.json (the undo for a final delete or a wrong replace import):
 // the server's copy is saved before the first overwrite of each day and before the push that
@@ -58,11 +57,14 @@ export function libFromDoc(d, what = 'library') {
   if (!(typeof d.version === 'number' && d.version <= LIB_VERSION)) {
     throw new DavError(`${what} was written by a newer Shiori (format ${d.version}). Update Shiori on this device; until then it does not sync, so it can't damage the newer data.`, 0, 'format');
   }
+  if (d.version < OLDEST_READ) {
+    throw new DavError(`${what} is from Shiori before 0.3 (format ${d.version}), which this version no longer reads.`, 0, 'format');
+  }
   const entries = new Map(), meta = new Map(), order = [];
   for (const e of d.entries) {
     if (!e || typeof e.id !== 'string') continue;
     if (!entries.has(e.id)) order.push(e.id);
-    entries.set(e.id, d.version < 2 ? entryFromMangaPin(e, d.labels?.tag) : e); // format 1 = MangaPin's tag numbers (+ your names for them)
+    entries.set(e.id, e);
     if (d.meta && d.meta[e.id]) meta.set(e.id, d.meta[e.id]);
   }
   return {

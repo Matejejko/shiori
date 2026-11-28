@@ -1,19 +1,13 @@
-// MangaPin -> Shiori. The only place that turns MangaPin's data into Shiori's: an export file
-// (Import → MangaPin export), and entries written before format 2, which are MangaPin's shape
-// (the one-time upgrade in store.js / sync.js). Self-contained: Shiori's own code never sees a
-// MangaPin tag number.
+// MangaPin -> Shiori: the only place that turns MangaPin's data into Shiori's (Import → MangaPin
+// export). Self-contained: Shiori's own code never sees a MangaPin tag number.
 import { parseExport, withField, MANGAPIN_TAGS } from './mangapin.js';
 import { normalizeTags } from './labels.js';
 import { mergeEntry } from './merge.js';
 
-/**
- * One MangaPin entry in Shiori's form: tag numbers become names; everything else is kept as is.
- * `own` = names the user gave tag numbers in an older Shiori (labels.tag: { '<n>': {name} }); they win.
- */
-export function entryFromMangaPin(e, own) {
+/** One MangaPin entry in Shiori's form: tag numbers become names; everything else is kept as is. */
+export function entryFromMangaPin(e) {
   if (!e || !Array.isArray(e.tags) || !e.tags.some((t) => typeof t !== 'string')) return e;
-  const named = (t) => (own && own[t] && typeof own[t].name === 'string' && own[t].name.trim()) || MANGAPIN_TAGS[t] || `Tag ${t}`;
-  const names = e.tags.map((t) => (typeof t === 'number' && Number.isFinite(t) ? named(t) : t));
+  const names = e.tags.map((t) => (typeof t === 'number' && Number.isFinite(t) ? MANGAPIN_TAGS[t] || `Tag ${t}` : t));
   return withField(e, 'tags', normalizeTags(names));
 }
 

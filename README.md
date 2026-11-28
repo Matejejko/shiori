@@ -73,9 +73,10 @@ DNS-rebinding protection drop their private answers, even on your LAN.
   names capitalised. Inside Shiori tags are only ever names.
 - **MangaPin has exactly one way in:** `src/lib/mangapin-import.js` turns a MangaPin export (Import →
   MangaPin export) into Shiori's form — tag numbers become names, MangaPin's `ts` becomes the edit time.
-  Data written before format 2 is MangaPin-shaped, so the same function upgrades it once, chosen by
-  version: `library.json` with `version: 1`, and browser storage without `v: 2`. Nothing else in Shiori
-  reads MangaPin's numbers; tools/shiori-to-mangapin.html is the way back.
+  Nothing else in Shiori reads MangaPin's numbers; tools/shiori-to-mangapin.html is the way back.
+- Data from Shiori before 0.3 (`library.json`, snapshots or backups below format 3, browser storage
+  without `v: 2`) is refused with a message, never misread. To move a device from 0.2: remove and
+  reinstall Shiori there, then let it sync (or import a 0.3 backup).
 - Export: `Shiori-DDMMYYYY.json` (local date), a Shiori backup: `{format: "shiori-backup", version,
   library: <same as library.json>, covers: {key: base64}}`. Importing it merges like another device that
   synced (edit times and deletes included), or replaces as below. MangaPin can't read it.

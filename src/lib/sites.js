@@ -211,7 +211,8 @@ export const SITES = {
         if (start >= 0) {
           const end = flat.indexOf('"currentPage"', start);
           const body = flat.slice(start, end > start ? end : start + 500000);
-          for (const m of body.matchAll(/"number":(\d{1,5}(?:\.\d{1,3})?)/g)) {
+          // a chapter's own number directly follows its id (nested objects may carry other "number"s)
+          for (const m of body.matchAll(/\{"id":"[^"]*","number":(\d{1,5}(?:\.\d{1,3})?)/g)) {
             const chap = Number(m[1]);
             if (!byNum.has(chap)) byNum.set(chap, { chap, slug: m[1] });
           }

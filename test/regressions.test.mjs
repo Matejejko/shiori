@@ -163,27 +163,19 @@ test('tags are names: every genre a site lists is kept, cleaned up, one spelling
   assert.equal(MANGAPIN_TAGS[20], '4 Koma'); assert.equal(MANGAPIN_TAGS[30], 'Self Published');
 });
 
-test('data from before format 2 (MangaPin tag numbers) is upgraded once, by version, in storage and from the server', async () => {
+test('data from before 0.3 is refused with a clear message, never misread (storage and server)', async () => {
+  const { fromDoc } = await import('../src/lib/sync.js');
   const { entryFromMangaPin } = await import('../src/lib/mangapin-import.js');
-  const { fromDoc, toDoc } = await import('../src/lib/sync.js');
-  const e = { siteId: 'arena', slug: 's', name: 'n', cLang: 'en', folder: 1, tags: [81, 60, 999], ts: 1, createTs: 1, id: 'OldTagsAA1' };
-  assert.deepEqual(entryFromMangaPin(e).tags, ['Fantasy', 'Action', 'Tag 999']);
-  assert.deepEqual(Object.keys(entryFromMangaPin(e)), Object.keys(e)); // field order kept
-  // storage without a version: upgraded when read, stored as version 2 by the next save
+  const e = { siteId: 'arena', slug: 's', name: 'n', cLang: 'en', folder: 1, tags: [81, 60], ts: 1, createTs: 1, id: 'OldTagsAA1' };
+  // browser storage without a version
   const store = new Store(new MemoryArea());
-  await store.area.set({ 'e:OldTagsAA1': JSON.stringify(e), lib: { order: ['OldTagsAA1'], meta: {}, tombs: {}, labels: { folder: {}, tag: { 999: { name: 'Re-read later', ts: 1 } } } } });
-  const lib = await store.loadLibrary();
-  assert.deepEqual(lib.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Re-read later']); // the name you gave a tag number wins
-  assert.deepEqual(lib.labels, { folder: {} });
-  await store.saveLibrary(lib);
-  assert.equal((await store.area.get('lib')).lib.v, 2);
-  assert.deepEqual(JSON.parse((await store.area.get('e:OldTagsAA1'))['e:OldTagsAA1']).tags, ['Fantasy', 'Action', 'Re-read later']);
-  // server: a format-1 library.json is upgraded; a format-2 one is read exactly as written
-  const doc = fromDoc(JSON.stringify({ format: 'shiori-library', version: 1, entries: [e], labels: { folder: {}, type: {}, tag: {} } }));
-  assert.deepEqual(doc.entries.get('OldTagsAA1').tags, ['Fantasy', 'Action', 'Tag 999']);
-  assert.equal(JSON.parse(toDoc(doc)).version, 3);
-  const v2 = { ...e, tags: ['fantasy', 'Action'] }; // format 2 is not re-interpreted, not even cleaned up again
-  assert.deepEqual(fromDoc(JSON.stringify({ format: 'shiori-library', version: 2, entries: [v2] })).entries.get('OldTagsAA1').tags, ['fantasy', 'Action']);
+  await store.area.set({ 'e:OldTagsAA1': JSON.stringify(e), lib: { order: ['OldTagsAA1'], meta: {}, tombs: {}, labels: { folder: {} } } });
+  await assert.rejects(store.loadLibrary(), /before 0\.3.*reinstall/);
+  assert.equal((await new Store(new MemoryArea()).loadLibrary()).entries.size, 0); // a fresh install is fine
+  // library.json / snapshots / backups of format 1 and 2
+  for (const version of [1, 2]) assert.throws(() => fromDoc(JSON.stringify({ format: 'shiori-library', version, entries: [e] })), /before 0\.3/);
+  // the MangaPin import still turns tag numbers into names (the one place that does)
+  assert.deepEqual(entryFromMangaPin(e).tags, ['Fantasy', 'Action']);
 });
 
 test('reading before pinning: chapter and series pages map to one series; forward only; max 100, 30 days', async () => {

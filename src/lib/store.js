@@ -12,10 +12,9 @@
 //   dseq        local change counter (bumped by every non-silent library save)
 
 import { emptyLabels } from './merge.js';
-import { entryFromMangaPin } from './mangapin-import.js';
 
 // Version of the data in this browser's storage (the index's `v`; none = 1). 2: tags are names.
-// Older data is MangaPin's shape and is upgraded once, when read; the next save stores it as 2.
+// Data from before 0.3 (no `v`) is not read: remove and reinstall Shiori, then sync or import.
 export const STORE_VERSION = 2;
 
 const EMPTY_INDEX = () => ({ order: [], meta: {}, tombs: {}, labels: emptyLabels(), days: {}, seen: undefined, layoutTs: 0 });
@@ -57,6 +56,9 @@ export class Store {
   /** Load the full library: { order, entries:Map<id,obj>, meta:Map, tombs:Map, labels, layoutTs } */
   async loadLibrary() {
     const idx = await this.loadIndex();
+    if ((idx.v ?? 1) < STORE_VERSION && idx.order.length) {
+      throw new Error('This browser holds a library from Shiori before 0.3, which this version no longer reads. Remove and reinstall Shiori, then sync or import a backup.');
+    }
     const keys = idx.order.map((id) => 'e:' + id);
     const got = keys.length ? await this.area.get(keys) : {};
     const entries = new Map();
@@ -64,8 +66,7 @@ export class Store {
     for (const id of idx.order) {
       const raw = got['e:' + id];
       if (typeof raw !== 'string') continue;
-      const e = JSON.parse(raw);
-      entries.set(id, (idx.v ?? 1) < 2 ? entryFromMangaPin(e, idx.labels?.tag) : e);
+      entries.set(id, JSON.parse(raw));
       order.push(id);
     }
     return {

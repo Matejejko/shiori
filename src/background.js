@@ -208,6 +208,11 @@ function runReleaseChecks({ ids = null, force = false }) {
       await api.storage.local.set({ relchk, relerr: errs }); // persisted per entry: a killed worker resumes next tick
       broadcast({ type: 'releases', done: results.length, total: due.length });
     }
+    // forget check times and errors of series that are gone
+    const errs = (await api.storage.local.get('relerr')).relerr || {};
+    const live = (await store.loadLibrary()).entries;
+    for (const m of [relchk, errs]) for (const id of Object.keys(m)) if (!live.has(id)) delete m[id];
+    await api.storage.local.set({ relchk, relerr: errs });
     updateBadge();
     return { checked: results.length, changed: results.filter((r) => r.changed).length, errors: results.filter((r) => r.error) };
   })().finally(() => { releasesRunning = null; });

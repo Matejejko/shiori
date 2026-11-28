@@ -71,3 +71,10 @@ test('genericChapter parses common chapter path forms', () => {
   assert.equal(genericChapter('/series/x/episode_12'), 12);
   assert.equal(genericChapter('/series/x/'), null);
 });
+
+test('a newer latest chapter does not keep the old chapter\'s link fields', async () => {
+  const { applyChapters } = await import('../src/lib/releases.js');
+  const e = { siteId: 'arena', slug: 's', name: 'n', latest: { chap: 10, slug: 'c-10', id: '99', cycle: 2, ts: 1 }, progress: { chap: 9, ts: 1 }, folder: 1, ts: 1, id: 'AAAAAAAAAA' };
+  const out = applyChapters(e, [{ chap: 12, slug: 'c-12' }, { chap: 11, slug: 'c-11' }], 1000);
+  assert.deepEqual(out.latest, { cycle: 2, chap: 12, ts: 1000 });
+});

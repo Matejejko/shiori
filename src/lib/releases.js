@@ -24,7 +24,8 @@ export function applyChapters(entry, chapters, now = Date.now(), { complete = tr
   let changed = false;
   const max = valid.reduce((a, c) => (c.chap > a.chap ? c : a));
   if (!entry.latest || typeof entry.latest.chap !== 'number' || max.chap > entry.latest.chap) {
-    out = withField(out, 'latest', { ...(entry.latest || {}), chap: max.chap, ts: now });
+    const { slug, id, ...keep } = entry.latest || {}; // the old chapter's link fields don't describe the new one
+    out = withField(out, 'latest', { ...keep, chap: max.chap, ts: now });
     changed = true;
   }
   const read = entry.progress && typeof entry.progress.chap === 'number' ? entry.progress.chap : -Infinity;

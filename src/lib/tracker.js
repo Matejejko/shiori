@@ -89,7 +89,8 @@ export function trackVisit(lib, url, now = Date.now()) {
   if (!changed) return null;
   let e = lib.entries.get(entry.id);
   if (!e.latest || typeof e.latest.chap !== 'number' || e.latest.chap < match.chap) {
-    const latest = { ...(e.latest || {}), chap: match.chap, ts: e.progress.ts };
+    const { slug, id, ...keep } = e.latest || {}; // the old chapter's link fields don't describe this one
+    const latest = { ...keep, chap: match.chap, ts: e.progress.ts };
     e = withField(e, 'latest', latest);
     lib.entries.set(entry.id, e);
   }
