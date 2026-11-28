@@ -31,8 +31,10 @@ const stripAsuraHash = (s) => s.replace(/-[0-9a-f]{8}$/, '');
 
 // When the series is known, a root-level chapter path is unambiguous: "/{id-}{title}-{N}/".
 const reEscape = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+// Only a one-digit decimal counts ("-10-5" = 10.5): "-2-15" is chapter 15 of the sequel "…-2", not
+// chapter 2.15 of the pinned original.
 const themesiaChapterForSlug = (slug) =>
-  `^/(?<cslug>(?:\\d{9,12}-)?${reEscape(stripThemesiaId(slug))}-(?:chapter-)?(?<chap>${NUM_DASH}))/?$`;
+  `^/(?<cslug>(?:\\d{9,12}-)?${reEscape(stripThemesiaId(slug))}-(?:chapter-)?(?<chap>\\d{1,5}(?:-\\d)?))/?$`;
 
 const json = (text) => { try { return JSON.parse(text); } catch { return null; } };
 

@@ -183,8 +183,21 @@ function numOrEmpty(v) { return v === undefined || v === null ? '' : String(v); 
 const toDateInput = (ts) => (ts ? new Date(ts - new Date(ts).getTimezoneOffset() * 60000).toISOString().slice(0, 10) : '');
 const fromDateInput = (s) => (s ? new Date(s + 'T12:00:00').getTime() : undefined);
 
+// close the series window, but ask first when edits would be lost (set per window in openEditor)
+async function closeEditor() {
+  const d = $('edit');
+  if (d.isDirty && d.isDirty() && !(await confirmBox('Discard your changes?', 'Your edits to this series are not saved.', 'Discard'))) return;
+  d.close();
+}
 // click on the backdrop (outside the window) closes the series dialog and the confirmation
-for (const id of ['edit', 'confirm']) $(id).addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
+$('edit').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) closeEditor(); });
+$('confirm').addEventListener('click', (ev) => { if (ev.target === ev.currentTarget) ev.currentTarget.close(); });
+// Escape with unsaved edits: the first press warns, the second discards. (No nested dialog: an
+// Escape is not a user activation, and Chrome then ties a dialog opened from it to this one.)
+$('edit').addEventListener('cancel', (ev) => {
+  const d = ev.currentTarget;
+  if (d.isDirty && d.isDirty() && !d.escArmed) { ev.preventDefault(); d.escArmed = true; d.warn('Unsaved changes: press Escape again to discard them, or Save.'); }
+});
 
 /** Styled confirmation in the middle of the screen; resolves true only on the confirm button. */
 function confirmBox(title, body, okText) {
@@ -317,10 +330,14 @@ function openEditor(id) {
       } } }),
         msg),
       h('div', { class: 'row tight' },
-        h('button', { type: 'button', class: 'ghost', text: 'Close', on: { click: () => dlg.close() } }),
+        h('button', { type: 'button', class: 'ghost', text: 'Close', on: { click: closeEditor } }),
         h('button', { type: 'button', class: 'edit-toggle view-only', text: 'Edit details', on: { click: () => { dlg.classList.add('editing'); f.progress.focus(); } } }),
         h('button', { type: 'submit', class: 'edit-only', text: 'Save' }))),
   ));
+  dlg.escArmed = false;
+  dlg.warn = (t) => { msg.textContent = t; msg.className = 'small err-text'; };
+  dlg.isDirty = () => dlg.classList.contains('editing')
+    && (JSON.stringify({ ...readForm(), progress: f.progress.value }) !== JSON.stringify(init) || !!f.newTag.value.trim() || !!f.moveUrl.value.trim());
   dlg.classList.remove('editing'); // always open on the details view
   dlg.showModal();
 }

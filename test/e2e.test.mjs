@@ -101,6 +101,20 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.waitForFunction(() => !document.querySelector('dialog#confirm').open);
     await app.keyboard.press('Escape');
     assert.equal(await app.textContent('#count'), countBefore);
+    // unsaved edits: Close asks (Cancel keeps editing); Escape warns once, a second Escape discards
+    await app.click('#grid .tile >> nth=0');
+    await app.click('#edit .edit-toggle');
+    await app.fill('#edit input[type=number][step=any]:not([min])', '7');
+    await app.click('#edit button:text-is("Close")');
+    await app.waitForSelector('dialog#confirm[open]');
+    assert.equal(await app.textContent('#confirm .c-title'), 'Discard your changes?');
+    await app.click('#confirm button[value=cancel]');
+    assert.equal(await app.$eval('dialog#edit', (d) => d.open), true);
+    await app.keyboard.press('Escape');
+    assert.equal(await app.$eval('dialog#edit', (d) => d.open), true);
+    assert.match(await app.textContent('#edit .ed-foot'), /press Escape again/);
+    await app.keyboard.press('Escape');
+    await app.waitForFunction(() => !document.querySelector('dialog#edit').open);
     await app.click('#fTag summary');
     await app.uncheck('#fTag input[value="Action"]');
     await app.uncheck('#fTag input[value="Fantasy"]');
@@ -221,8 +235,8 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const r = await sw.evaluate((id) => self.shiori.handlers.pin({ tabId: id }), cxTab);
     const pinned = await sw.evaluate(async (id) => self.shiori.store.getEntry(id), r.id);
     assert.equal(pinned.siteId, 'comix');
-    for (const t of ['Comedy', 'Romance', 'Josei', 'Long Strip', 'Full Color', 'Office Workers']) assert.ok(pinned.tags.includes(t), `tag ${t} in ${pinned.tags}`);
-    assert.ok(pinned.tags.includes('Glasses-Wearing Female Lead'), 'tags MangaPin does not know are kept too');
+    // comix's generic fields only (genres, demographics, formats); its fine-grained `tags` are skipped
+    assert.deepEqual(pinned.tags, ['Comedy', 'Romance', 'Josei', 'Long Strip', 'Full Color']);
     await cx.close();
 
     // read chapter 23 of a series that is not pinned, then pin it from its series page: progress = 23

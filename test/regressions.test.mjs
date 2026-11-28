@@ -431,3 +431,12 @@ test('unknown sites: .html chapter pages are chapters; a reader page number is n
   assert.equal(seriesOf('https://read.example/manga/title/chapter-5/2').slug, '/manga/title');
   assert.equal(seriesOf('https://read.example/manga/title/chapter-6/').slug, '/manga/title');
 });
+
+test('Thunderscans: a sequel\'s chapter ("…-2-15") is not chapter 2.15 of the pinned original', async () => {
+  const { locate } = await import('../src/lib/tracker.js');
+  const lib = emptyLibrary();
+  addEntry(lib, { siteId: 'thunder', slug: '0086250808-tower-of-god', name: 'ToG', cLang: 'en', folder: 1, tags: [], ts: 1, createTs: 1, id: 'TowerGod01' });
+  assert.equal(locate(lib, 'https://en-thunderscans.com/0086250808-tower-of-god-2-15/').entry, null);
+  assert.equal(locate(lib, 'https://en-thunderscans.com/tower-of-god-12-5/').match.chap, 12.5);
+  assert.equal(locate(lib, 'https://en-thunderscans.com/tower-of-god-chapter-40/').match.chap, 40);
+});

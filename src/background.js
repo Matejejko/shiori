@@ -239,7 +239,9 @@ function scrapePage() {
   const init = json(document.querySelector('script#initial-data'));
   for (const [k, q] of Object.entries(init?.queries || {})) {
     if (!k.includes('"detail"')) continue; // only this series, not recommendations
-    for (const f of ['genres', 'demographics', 'formats', 'tags']) for (const g of Array.isArray(q?.[f]) ? q[f] : []) if (g && g.title) genres.push(String(g.title));
+    // the site's own split: genres/demographics/formats are the generic ones; its `tags` are fine-grained
+    // descriptors ("Glasses-Wearing Female Lead", "2020s") that would flood the tag filter
+    for (const f of ['genres', 'demographics', 'formats']) for (const g of Array.isArray(q?.[f]) ? q[f] : []) if (g && g.title) genres.push(String(g.title));
   }
   const ld = [];
   for (const el of document.querySelectorAll('script[type="application/ld+json"]')) {
