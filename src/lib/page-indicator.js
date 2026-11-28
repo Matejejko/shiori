@@ -33,7 +33,7 @@ export function renderPageIndicator(info) {
   const style = el('style');
   style.textContent = `
     :host { all: initial; }
-    .box { --bg: #ffffff; --ink: #1f1d1a; --ink2: #6b665e; --line: #e3ded6; --hover: rgba(0,0,0,.06); --shadow: rgba(0,0,0,.18); --ac: ${accent || '#c2410c'}; --acink: #fff;
+    .box { --bg: #fbf7f1; --ink: #2a2118; --ink2: #6e604f; --line: #e2d6c6; --hover: rgba(42,33,24,.07); --shadow: rgba(42,33,24,.2); --ac: ${accent || '#c2410c'}; --acink: #fff;
       position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; display: flex; align-items: center; gap: 10px;
       padding: 8px 8px 8px 10px; border-radius: 12px; font: 500 13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
       background: var(--bg); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 6px 24px var(--shadow); max-width: calc(100vw - 32px); }

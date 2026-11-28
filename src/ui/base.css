@@ -1,12 +1,13 @@
 /* Shiori: covers on warm paper, one accent colour, a small badge for new chapters,
    screentone for missing covers. Tokens + shared components. */
 :root {
-  --paper: #f7f5f2; --sheet: #ffffff; --ink: #1f1d1a; --ink-2: #6b665e;
-  --line: #e3ded6; --edge: #8c857b;
-  --ai: #c2410c; --ai-ink: #ffffff; --ai-soft: #fbeee6;
-  --ok: #15803d; --err: #b91c1c; --warn: #a16207;
-  --tone: #d6cfc4;
-  --shadow-float: 0 16px 40px rgb(31 29 26 / .2);
+  /* light: warm parchment, the dark theme's browns in light (text contrast ≥ 4.5:1 on both surfaces) */
+  --paper: #f3ece2; --sheet: #fbf7f1; --ink: #2a2118; --ink-2: #6e604f;
+  --line: #e2d6c6; --edge: #8f8170;
+  --ai: #c2410c; --ai-ink: #ffffff; --ai-soft: #f6e3d4;
+  --ok: #166534; --err: #b91c1c; --warn: #a16207;
+  --tone: #ddd0bd;
+  --shadow-float: 0 16px 40px rgb(42 33 24 / .2);
   --r-cover: 3px; --r-ctl: 6px; --r-float: 12px;
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 24px; --s6: 32px;
   --ctl-h: 34px;
