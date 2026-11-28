@@ -527,6 +527,7 @@ async function renderSettings() {
   form.token.placeholder = st.hasToken ? '(saved — leave empty to keep)' : 'paste app token';
   form.autoSync.checked = !!st.cfg.autoSync;
   form.releaseChecks.checked = !!st.cfg.releaseChecks;
+  form.pageIndicator.checked = st.cfg.pageIndicator !== false;
   if (state.lib) {
     clear(form.releaseFolder).append(...knownKeys('folder').map((v) => h('option', { value: v, text: labelFor('folder', v), selected: v === st.cfg.releaseFolder })));
   }
@@ -548,7 +549,7 @@ async function renderSettings() {
 function formCfg() {
   const form = $('settings');
   return {
-    cfg: { davUrl: form.davUrl.value.trim(), user: form.user.value.trim(), autoSync: form.autoSync.checked, releaseChecks: form.releaseChecks.checked, releaseFolder: Number(form.releaseFolder.value) || 1 },
+    cfg: { davUrl: form.davUrl.value.trim(), user: form.user.value.trim(), autoSync: form.autoSync.checked, releaseChecks: form.releaseChecks.checked, pageIndicator: form.pageIndicator.checked, releaseFolder: Number(form.releaseFolder.value) || 1 },
     token: form.token.value,
   };
 }

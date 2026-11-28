@@ -163,6 +163,20 @@ read-before-pin memory (series you read without pinning on a known manga site �
 100, 30 days) all live in `library.json`. So a series you started unpinned on one PC and pin on the other
 starts at the right chapter there.
 
+## Reading indicator on manga pages
+
+On a series or chapter page of a site Shiori knows (or any page of a series you pinned), a small box in
+the bottom-right corner shows where you are:
+
+- **pinned:** *Chapter 22 of 40* — with **Continue ch 23** when the next chapter's address is known; on a
+  chapter page it shows that chapter as saved;
+- **not pinned:** *Read up to ch 7* (from the read-before-pin memory) or *Not started*, with **Pin**
+  (pinning starts at the chapter you reached).
+
+× hides it on that page; Settings → *Show where you are on manga pages* turns it off. It lives in a closed
+shadow root in the extension's isolated world: the page can't read your progress from it or restyle it,
+and its only action, Pin, can only pin the tab it is on.
+
 ## Covers
 
 Pinning takes the cover from the page you pin. A series without one — MangaPin lost some, and a few image

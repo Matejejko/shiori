@@ -25,6 +25,7 @@ export const DEFAULT_CFG = {
   autoSync: true,
   releaseChecks: true,
   releaseFolder: 1,    // folder whose series get release checks
+  pageIndicator: true, // the reading indicator on manga pages (bottom right)
 };
 
 export class Store {

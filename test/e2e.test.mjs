@@ -259,7 +259,18 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     const rdTab = await sw.evaluate(async () => (await chrome.tabs.query({ url: 'https://arenascan.com/manga/e2e-seen/' }))[0].id);
     const cur = await sw.evaluate((id) => self.shiori.handlers.currentTab({ tabId: id }), rdTab);
     assert.equal(cur.seen && cur.seen.chap, 23); // the popup can say "You've read up to chapter 23"
-    const pr = await sw.evaluate((id) => self.shiori.handlers.pin({ tabId: id }), rdTab);
+    // the page indicator (closed shadow root: read through the extension's isolated world)
+    const readIndicator = () => sw.evaluate(async (id) => (await chrome.scripting.executeScript({ target: { tabId: id }, func: () => {
+      const st = globalThis.__shioriIndicator; return st && st.text && st.host && st.host.isConnected ? st.text() : null;
+    } }))[0].result, rdTab);
+    let shown = null;
+    for (let i = 0; i < 50 && !/Read up to ch 23/.test(shown || ''); i++) { shown = await readIndicator(); await new Promise((r) => setTimeout(r, 100)); }
+    assert.match(shown, /not pinned.*Read up to ch 23.*Pin/);
+    assert.equal(await rd.evaluate(() => document.documentElement.textContent.includes('Read up to ch')), false, 'the page cannot read the indicator');
+    await sw.evaluate(async (id) => chrome.scripting.executeScript({ target: { tabId: id }, func: () => globalThis.__shioriIndicator.click('pin') }), rdTab); // pin from the page
+    for (let i = 0; i < 50 && !/read up toChapter 23/.test(shown || ''); i++) { shown = await readIndicator(); await new Promise((r) => setTimeout(r, 100)); }
+    assert.match(shown, /Shiori · read up toChapter 23/);
+    const pr = await sw.evaluate((id) => self.shiori.handlers.pin({ tabId: id }), rdTab); // already pinned now
     const seenEntry = await sw.evaluate(async (id) => self.shiori.store.getEntry(id), pr.id);
     assert.equal(seenEntry.progress.chap, 23);
     assert.equal(seenEntry.progress.slug, 'e2e-seen-chapter-23');

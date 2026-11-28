@@ -1,6 +1,6 @@
 // Tab URL -> pinned entry + chapter, and forward-only progress updates. Pure functions.
 
-import { matchUrl, sameSeries, entrySlug, matchChapterForSeries, slugKey } from './adapters.js';
+import { matchUrl, sameSeries, entrySlug, matchChapterForSeries, slugKey, chapterUrl } from './adapters.js';
 import { setProgress } from './library.js';
 import { withField } from './mangapin.js';
 
@@ -139,4 +139,31 @@ export function noteSeen(seen, url, now = Date.now()) {
     keys.sort((a, b) => seen[a].ts - seen[b].ts).slice(0, keys.length - SEEN_MAX).forEach((x) => delete seen[x]);
   }
   return true;
+}
+
+// ---- the on-page reading indicator -----------------------------------------------------------
+
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * What the indicator on a manga page shows, or null where it shows nothing (pages that are not a
+ * series or chapter of a known site, and unpinned series on sites Shiori doesn't know).
+ *   pinned: { state:'pinned', read, latest, here, nextChap, nextUrl }  — read = chapter you're at
+ *   not pinned: { state:'seen'|'new', read, here }                    — from the read-before-pin memory
+ */
+export function pageInfo(lib, url) {
+  const { entry, match } = locate(lib, url);
+  const here = match && match.kind === 'chapter' && isNum(match.chap) ? match.chap : null;
+  if (entry) {
+    const read = isNum(entry.progress?.chap) ? entry.progress.chap : null;
+    const next = entry.next && isNum(entry.next.chap) && (read === null || entry.next.chap > read) ? entry.next : null;
+    let nextUrl = null;
+    try { nextUrl = next ? chapterUrl(entry, next) : null; } catch { /* no link for it */ }
+    if (nextUrl && !/^https?:\/\//i.test(nextUrl)) nextUrl = null;
+    return { state: 'pinned', read, latest: isNum(entry.latest?.chap) ? entry.latest.chap : null, here, nextChap: next ? next.chap : null, nextUrl };
+  }
+  const s = seriesOf(url);
+  if (!s || s.generic) return null;
+  const seen = seenFor(lib.seen, s.siteId, s.slug);
+  return { state: seen ? 'seen' : 'new', read: seen ? seen.chap : null, here: isNum(s.chap) ? s.chap : null };
 }

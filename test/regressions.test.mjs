@@ -432,3 +432,16 @@ test('Thunderscans: a sequel\'s chapter ("…-2-15") is not chapter 2.15 of the 
   assert.equal(locate(lib, 'https://en-thunderscans.com/tower-of-god-12-5/').match.chap, 12.5);
   assert.equal(locate(lib, 'https://en-thunderscans.com/tower-of-god-chapter-40/').match.chap, 40);
 });
+
+test('page indicator: where you are on pinned series, what you read on unpinned ones, nothing elsewhere', async () => {
+  const { pageInfo } = await import('../src/lib/tracker.js');
+  const lib = emptyLibrary();
+  addEntry(lib, { siteId: 'arena', slug: 'a-portrait-of-pride', name: 'P', progress: { chap: 22, ts: 1 }, latest: { chap: 40, ts: 1 }, next: { chap: 23, slug: 'a-portrait-of-pride-chapter-23', ts: 1 }, cLang: 'en', folder: 1, tags: [], ts: 1, createTs: 1, id: 'AAAAAAAAAA' });
+  lib.seen['arena|other-one'] = { chap: 7, ts: Date.now() };
+  assert.deepEqual(pageInfo(lib, 'https://arenascan.com/manga/a-portrait-of-pride/'), { state: 'pinned', read: 22, latest: 40, here: null, nextChap: 23, nextUrl: 'https://arenascan.com/a-portrait-of-pride-chapter-23/' });
+  assert.equal(pageInfo(lib, 'https://arenascan.com/a-portrait-of-pride-chapter-22/').here, 22);
+  assert.deepEqual(pageInfo(lib, 'https://arenascan.com/manga/other-one/'), { state: 'seen', read: 7, here: null });
+  assert.deepEqual(pageInfo(lib, 'https://arenascan.com/manga/never-read/'), { state: 'new', read: null, here: null });
+  assert.equal(pageInfo(lib, 'https://example.org/blog/chapter-4/'), null); // unknown site, not pinned
+  assert.equal(pageInfo(lib, 'https://arenascan.com/'), null); // not a series page
+});

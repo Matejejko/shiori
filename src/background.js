@@ -8,7 +8,8 @@ import { syncOnce } from './lib/sync.js';
 import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry, countRead } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
-import { locate, trackVisit, seriesOf, seenFor, noteSeen } from './lib/tracker.js';
+import { locate, trackVisit, seriesOf, seenFor, noteSeen, pageInfo } from './lib/tracker.js';
+import { renderPageIndicator } from './lib/page-indicator.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName, matchUrl, coverSource, coverFromResponse } from './lib/adapters.js';
 import { b64ToBytes } from './lib/base64.js';
@@ -126,6 +127,14 @@ function runSync(reason) {
 // ---------------------------------------------------------------------------------------
 // tracking
 
+/** The reading indicator on this tab's page (after any tracking queued before it). */
+function showIndicator(tabId, url) {
+  return store.withLock(async () => {
+    if (!(await store.getConfig()).pageIndicator) return null;
+    return pageInfo(await store.loadLibrary(), url);
+  }).then((info) => (info === null ? null : api.scripting.executeScript({ target: { tabId }, func: renderPageIndicator, args: [info] })))
+    .catch(() => {}); // pages the extension may not touch (store, other extensions, not loaded yet)
+}
 const lastSeen = new Map(); // tabId -> url (skip duplicate onUpdated events)
 api.tabs.onUpdated.addListener((tabId, change, tab) => {
   const url = change.url || (change.status === 'complete' ? tab.url : null);
@@ -150,6 +159,11 @@ api.tabs.onUpdated.addListener((tabId, change, tab) => {
   }).catch((e) => console.warn('[shiori track]', e));
 });
 api.tabs.onRemoved.addListener((tabId) => lastSeen.delete(tabId));
+// after the tracking listener (listeners run in order): the indicator shows the chapter just saved
+api.tabs.onUpdated.addListener((tabId, change, tab) => {
+  // page loaded, or a site's in-page navigation changed the address
+  if (/^https?:/.test(tab.url || '') && (change.status === 'complete' || (change.url && tab.status === 'complete'))) showIndicator(tabId, tab.url);
+});
 
 // ---------------------------------------------------------------------------------------
 // release checks
@@ -396,7 +410,11 @@ const handlers = {
     }
     return { url: tab.url, title: tab.title, entry, match, seen, site: match ? siteName(match.siteId) : null };
   },
-  async pin({ tabId, name, folder }) { return pinTab(tabId, { name, folder }); },
+  async pin({ tabId, name, folder }) {
+    const r = await pinTab(tabId, { name, folder });
+    api.tabs.get(tabId).then((t) => showIndicator(tabId, t.url), () => {});
+    return r;
+  },
   async setProgress({ id, chap, manual = true }) {
     return store.withLock(async () => {
       const lib = await store.loadLibrary();
@@ -580,8 +598,19 @@ const handlers = {
 };
 
 api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  // only our own extension pages may talk to the background
-  if (sender.id !== api.runtime.id || (sender.url && !sender.url.startsWith(api.runtime.getURL('')))) return false;
+  if (sender.id !== api.runtime.id) return false;
+  // the page indicator (our own injected code, in a web page's tab) may do one thing: pin that tab
+  if (sender.tab && sender.url && !sender.url.startsWith(api.runtime.getURL(''))) {
+    if (!msg || msg.type !== 'pinFromPage' || typeof sender.tab.id !== 'number') return false;
+    const tabId = sender.tab.id;
+    pinTab(tabId).then(
+      (r) => { sendResponse({ ok: true, result: { pinned: !!(r && (r.pinned || r.already)) } }); return api.tabs.get(tabId).then((t) => showIndicator(tabId, t.url)); },
+      (e) => sendResponse({ ok: false, error: String((e && e.message) || e) }),
+    ).catch(() => {});
+    return true;
+  }
+  // everything else: only our own extension pages
+  if (sender.url && !sender.url.startsWith(api.runtime.getURL(''))) return false;
   const h = msg && handlers[msg.type];
   if (!h) return false;
   Promise.resolve().then(() => h(msg)).then(
