@@ -206,6 +206,7 @@ function runReleaseChecks({ ids = null, force = false }) {
       const errs = (await api.storage.local.get('relerr')).relerr || {};
       if (r.error) errs[e.id] = { at: Date.now(), error: r.error }; else delete errs[e.id];
       await api.storage.local.set({ relchk, relerr: errs }); // persisted per entry: a killed worker resumes next tick
+      broadcast({ type: 'releases', done: results.length, total: due.length });
     }
     updateBadge();
     return { checked: results.length, changed: results.filter((r) => r.changed).length, errors: results.filter((r) => r.error) };
@@ -246,21 +247,24 @@ async function findCover(id) {
 const COVER_RETRY_MS = 7 * 86400e3; // a site that had no cover for a series is asked again after a week
 const COVERS_PER_RUN = 5;
 /** After release checks: a few series without any cover (here or on the server) get one looked up. */
-async function fillMissingCovers() {
-  if (!(await store.getConfig()).releaseChecks) return; // the same switch keeps Shiori off the sites
+async function fillMissingCovers({ manual = false } = {}) {
+  if (!manual && !(await store.getConfig()).releaseChecks) return 0; // the same switch keeps Shiori off the sites
   const lib = await store.loadLibrary();
   const have = new Set(await store.coverKeys());
   const onServer = new Set((await store.getSyncState()).remoteCovers || []); // sync brings those
   const { coverTry = {} } = await api.storage.local.get('coverTry');
   const now = Date.now();
   const missing = (e) => !e.img || (String(e.img).startsWith('local:') && !have.has(e.img) && !onServer.has(e.img));
-  const todo = [...lib.entries.values()].filter((e) => missing(e) && !(now - (coverTry[e.id] || 0) < COVER_RETRY_MS)).slice(0, COVERS_PER_RUN);
+  const todo = [...lib.entries.values()].filter((e) => missing(e) && (manual || !(now - (coverTry[e.id] || 0) < COVER_RETRY_MS))).slice(0, manual ? 25 : COVERS_PER_RUN);
+  let found = 0;
   for (const e of todo) {
     coverTry[e.id] = now;
-    try { await findCover(e.id); delete coverTry[e.id]; } catch (err) { console.info('[shiori covers]', e.name, err.message); }
+    broadcast({ type: 'covers', done: found, total: todo.length });
+    try { await findCover(e.id); delete coverTry[e.id]; found++; } catch (err) { console.info('[shiori covers]', e.name, err.message); }
   }
   for (const id of Object.keys(coverTry)) if (!lib.entries.has(id)) delete coverTry[id];
   await api.storage.local.set({ coverTry });
+  return found;
 }
 
 function scrapePage() {
@@ -541,7 +545,12 @@ const handlers = {
     }
   },
   async syncNow() { return runSync('manual'); },
-  async checkReleases({ ids, force = true }) { return runReleaseChecks({ ids, force }); },
+  async checkReleases({ ids, force = true }) {
+    const r = await runReleaseChecks({ ids, force });
+    // the "Check releases" button (all series) also fills in missing covers, now and without the weekly wait
+    if (!ids && r && !r.skipped) r.covers = await fillMissingCovers({ manual: true }).catch(() => 0);
+    return r;
+  },
   async saveLabels({ labels, base = {} }) {
     return store.withLock(async () => {
       const lib = await store.loadLibrary();

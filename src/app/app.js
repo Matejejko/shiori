@@ -171,7 +171,7 @@ $('checkAll').addEventListener('click', async () => {
   $('checkAll').disabled = true; $('checkAll').textContent = 'Checking…';
   try {
     const r = await send('checkReleases', { force: true });
-    $('checkAll').textContent = r.skipped ? 'Disabled' : `Checked ${r.checked}, ${r.changed} new, ${r.errors.length} failed`;
+    $('checkAll').textContent = r.skipped ? 'Disabled' : `Checked ${r.checked}, ${r.changed} new, ${r.errors.length} failed${r.covers ? `, ${r.covers} covers found` : ''}`;
   } catch (e) { $('checkAll').textContent = e.message; }
   setTimeout(() => { $('checkAll').textContent = 'Check releases'; $('checkAll').disabled = false; }, 4000);
   load();
@@ -644,6 +644,9 @@ $('syncNow').addEventListener('click', async () => {
 });
 let reloadTimer = null;
 api.runtime.onMessage.addListener((m) => {
+  // progress of "Check releases": one series at a time, politely spaced per site, so it can take minutes
+  if (m && m.type === 'releases' && $('checkAll').disabled) $('checkAll').textContent = `Checking ${m.done} / ${m.total}…`;
+  if (m && m.type === 'covers' && $('checkAll').disabled) $('checkAll').textContent = `Finding covers ${m.done} / ${m.total}…`;
   if (!m || (m.type !== 'changed' && m.type !== 'sync')) return;
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => load().catch(() => {}), 300);
