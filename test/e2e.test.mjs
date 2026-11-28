@@ -383,6 +383,11 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.click('#prefs button[type=submit]');
     await app.waitForFunction(() => /Reload the extension/.test(document.querySelector('#prefsMsg')?.textContent || ''));
     await sw.evaluate(() => { self.shiori.handlers.savePrefs = self.shiori.realSavePrefs; });
+    // Light really is light, also in browsers that darken light websites automatically
+    await app.check('#prefs input[name=theme][value=light]');
+    await app.click('#prefs button[type=submit]');
+    await app.waitForFunction(() => document.documentElement.dataset.theme === 'light');
+    assert.equal(await app.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'light only');
     // back to the defaults for the tests after this one
     await app.check('#prefs input[name=theme][value=auto]');
     await app.check('#prefs input[name=accent][value=""]');

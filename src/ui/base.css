@@ -34,7 +34,9 @@
     --shadow-float: 0 16px 40px rgb(0 0 0 / .5);
   color-scheme: dark;
 }
-:root[data-theme="light"] { color-scheme: light; }
+/* "only": browsers with automatic dark mode for websites (Chrome's Auto Dark Mode, Brave, Opera)
+   would otherwise repaint a light-only page dark — you chose Light */
+:root[data-theme="light"] { color-scheme: only light; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.45 var(--font); }
