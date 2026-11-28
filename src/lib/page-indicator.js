@@ -6,8 +6,7 @@
 
 /**
  * @param {null | {state:'pinned'|'seen'|'new', read:number|null, latest?:number|null, here:number|null,
- *   nextChap?:number|null, nextUrl?:string|null, theme?:'auto'|'light'|'dark', accent?:string, preview?:boolean}} info
- *   preview: Settings shows it on the extension page: buttons do nothing.
+ *   nextChap?:number|null, nextUrl?:string|null, theme?:'auto'|'light'|'dark', accent?:string}} info
  */
 /**
  * Accent colours for all of Shiori (Settings). '' = Shiori's orange (#c2410c, brighter #f97316 in
@@ -72,7 +71,6 @@ export function renderPageIndicator(info) {
     const a = el('a', info.state === 'pinned' ? 'btn' : 'btn ghost', `${started ? 'Continue' : 'Start reading'} ch ${ch(info.nextChap)}`);
     a.href = info.nextUrl;
     a.dataset.act = 'continue';
-    if (info.preview) a.addEventListener('click', (ev) => ev.preventDefault());
     box.append(a);
   }
   if (info.state !== 'pinned') {
@@ -81,7 +79,6 @@ export function renderPageIndicator(info) {
     b.dataset.act = 'pin';
     b.title = has(info.read) ? `Add to Shiori, starting at chapter ${ch(info.read)}` : 'Add to Shiori';
     b.addEventListener('click', () => {
-      if (info.preview) return;
       b.textContent = 'Pinning…';
       b.disabled = true;
       chrome.runtime.sendMessage({ type: 'pinFromPage' }).then((r) => { if (!r || !r.ok) b.textContent = 'Pin failed'; }, () => { b.textContent = 'Pin failed'; });
@@ -92,7 +89,7 @@ export function renderPageIndicator(info) {
   x.type = 'button';
   x.dataset.act = 'close';
   x.setAttribute('aria-label', 'Hide the Shiori indicator on this page');
-  x.addEventListener('click', () => { if (info.preview) return; st.closedOn = location.href; st.host.remove(); });
+  x.addEventListener('click', () => { st.closedOn = location.href; st.host.remove(); });
   box.append(x);
 
   st.root.replaceChildren(style, box);

@@ -3,7 +3,7 @@ import { formPatch } from '../lib/library.js';
 import { bytesToB64 } from '../lib/base64.js';
 import { DEFAULT_LABELS, KNOWN_TAGS, tagKey } from '../lib/labels.js';
 import { computeStats, computeReading, MIN_PER_CHAPTER } from '../lib/stats.js';
-import { renderPageIndicator, ACCENTS } from '../lib/page-indicator.js';
+import { ACCENTS } from '../lib/page-indicator.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { lib: null, covers: {}, st: null, folder: '' };
@@ -30,7 +30,6 @@ function showTab(name, folder) {
   if (name === 'library' && state.lib) renderGrid();
   if (name === 'settings') renderSettings();
   if (name === 'prefs') { renderPrefs(); renderLabels(); }
-  if (name !== 'prefs') renderPageIndicator(null); // the preview belongs to Settings only
   if (name === 'stats') renderStats();
 }
 $('folderTabs').addEventListener('click', (ev) => { const b = ev.target.closest('.tab'); if (b) showTab('library', b.dataset.folder); });
@@ -589,13 +588,9 @@ $('grantHosts').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------------------
-// settings: appearance (all of Shiori) and the reading indicator; saved on every change
+// settings: appearance (all of Shiori) and the reading indicator; applied when you press Save
 
 const prefsForm = () => $('prefs');
-function previewIndicator() {
-  const cfg = state.st?.cfg || {};
-  renderPageIndicator(cfg.pageIndicator === false ? null : { state: 'pinned', read: 22, latest: 40, here: null, nextChap: 23, nextUrl: 'https://example.org/', theme: cfg.theme, accent: cfg.accent, preview: true });
-}
 function renderPrefs() {
   if (!state.st) return;
   const f = prefsForm(), cfg = state.st.cfg;
@@ -609,17 +604,23 @@ function renderPrefs() {
     dot.style.background = hex || '#c2410c';
     sw.append(h('label', { class: 'check' }, input, dot));
   }
-  previewIndicator();
 }
-prefsForm().addEventListener('change', async () => {
-  const f = prefsForm();
+prefsForm().addEventListener('change', () => { $('prefsMsg').textContent = 'Not saved yet.'; $('prefsMsg').className = 'small muted'; });
+prefsForm().addEventListener('submit', async (ev) => {
+  ev.preventDefault();
+  const f = prefsForm(), msg = $('prefsMsg');
   const prefs = { pageIndicator: f.pageIndicator.checked, theme: f.querySelector('input[name=theme]:checked')?.value, accent: f.querySelector('input[name=accent]:checked')?.value };
   try {
-    state.st.cfg = (await send('savePrefs', { prefs })).cfg;
-    applyTheme(state.st.cfg);
-    $('prefsMsg').textContent = 'Saved.'; $('prefsMsg').className = 'small ok-text';
-  } catch (e) { $('prefsMsg').textContent = e.message; $('prefsMsg').className = 'small err-text'; }
-  previewIndicator();
+    const cfg = (await send('savePrefs', { prefs })).cfg;
+    // "Saved." only when the background really stored it (an old background still running after
+    // an update answers, but ignores settings it doesn't know)
+    if (cfg.theme !== prefs.theme || (cfg.accent || '') !== prefs.accent || cfg.pageIndicator !== prefs.pageIndicator) {
+      throw new Error('Not saved: Shiori\'s background is an older version. Reload the extension (chrome://extensions → ↻ on Shiori) and save again.');
+    }
+    state.st.cfg = cfg;
+    applyTheme(cfg);
+    msg.textContent = 'Saved.'; msg.className = 'small ok-text';
+  } catch (e) { msg.textContent = e.message; msg.className = 'small err-text'; }
 });
 
 // ---------------------------------------------------------------------------------------

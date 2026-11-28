@@ -355,12 +355,13 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.notEqual(after, before);
   });
 
-  await t.test('Settings: theme and accent for all of Shiori, reading indicator on/off, with a preview', async () => {
+  await t.test('Settings: theme and accent for all of Shiori, reading indicator on/off, applied on Save', async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=prefs]');
-    await app.waitForFunction(() => globalThis.__shioriIndicator?.host?.isConnected);
-    assert.match(await app.evaluate(() => globalThis.__shioriIndicator.text()), /Chapter 22 of 40.*Continue ch 23/);
     await app.check('#prefs input[name=theme][value=dark]');
     await app.check('#prefs input[name=accent][value="#2563eb"]');
+    assert.equal(await app.evaluate(() => document.documentElement.style.getPropertyValue('--ai')), '', 'nothing applies before Save');
+    assert.equal(await app.textContent('#prefsMsg'), 'Not saved yet.');
+    await app.click('#prefs button[type=submit]');
     await app.waitForFunction(() => document.querySelector('#prefsMsg')?.textContent === 'Saved.' && document.documentElement.style.getPropertyValue('--ai') === '#2563eb');
     const cfg = await sw.evaluate(async () => (await self.shiori.store.getConfig()));
     assert.deepEqual([cfg.theme, cfg.accent, cfg.pageIndicator], ['dark', '#2563eb', true]);
@@ -374,16 +375,29 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.equal(await pop.evaluate(() => document.documentElement.dataset.theme), 'dark');
     assert.equal(await pop.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ai').trim()), '#2563eb');
     await pop.close();
+    // a background still running an older version answers but ignores settings it doesn't know:
+    // that must not read as "Saved."
+    await sw.evaluate(() => { self.shiori.realSavePrefs = self.shiori.handlers.savePrefs; self.shiori.handlers.savePrefs = async () => ({ cfg: await self.shiori.store.getConfig() }); });
+    await app.click('#openSettings'); await app.click('#menu button[data-tab=prefs]');
+    await app.check('#prefs input[name=accent][value="#15803d"]');
+    await app.click('#prefs button[type=submit]');
+    await app.waitForFunction(() => /Reload the extension/.test(document.querySelector('#prefsMsg')?.textContent || ''));
+    await sw.evaluate(() => { self.shiori.handlers.savePrefs = self.shiori.realSavePrefs; });
     // back to the defaults for the tests after this one
     await app.check('#prefs input[name=theme][value=auto]');
     await app.check('#prefs input[name=accent][value=""]');
+    await app.click('#prefs button[type=submit]');
     await app.waitForFunction(() => !document.documentElement.dataset.theme && !document.documentElement.style.getPropertyValue('--ai'));
     assert.equal(await app.$$eval('.labels .card[data-kind=folder] .rows .row', (r) => r.length) >= 5, true, 'folder names live here now');
+    assert.equal(await app.evaluate(() => !!globalThis.__shioriIndicator), false, 'no indicator box on Shiori\'s own pages');
     await app.uncheck('#prefs input[name=pageIndicator]');
-    await app.waitForFunction(() => !globalThis.__shioriIndicator?.host?.isConnected);
+    await app.click('#prefs button[type=submit]');
+    await app.waitForFunction(() => document.querySelector('#prefsMsg')?.textContent === 'Saved.');
+    assert.equal((await sw.evaluate(async () => (await self.shiori.store.getConfig()))).pageIndicator, false);
     await app.check('#prefs input[name=pageIndicator]');
+    await app.click('#prefs button[type=submit]');
+    await app.waitForFunction(() => document.querySelector('#prefsMsg')?.textContent === 'Saved.');
     await app.click('#folderTabs button[data-folder=""]');
-    assert.equal(await app.evaluate(() => !!globalThis.__shioriIndicator?.host?.isConnected), false, 'the preview leaves with Settings');
   });
 
   await t.test('the reading log counted the chapters read in this session', async () => {

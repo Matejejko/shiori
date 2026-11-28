@@ -175,7 +175,7 @@ the bottom-right corner shows where you are:
 
 The chapter to continue with comes from what Shiori knows, else from the series page's own chapter links
 (and the chapter data some sites embed), looked at again a moment later for lists that load late.
-× hides it on that page; ☰ → **Settings** turns it on/off (live preview in that page's corner).
+× hides it on that page; ☰ → **Settings** turns it on/off.
 
 ## Appearance
 
