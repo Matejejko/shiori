@@ -228,3 +228,29 @@ export function extractChapters(entry, text, req, ctx = {}) {
   const r = a.list.parse ? a.list.parse(e, text, req, ctx, helpers) || {} : { chapters: extractChapterLinks(e, text, req.url) };
   return { chapters: r.chapters || [], complete: r.complete ?? a.list.complete !== false, ctx: r.ctx };
 }
+
+// ---- covers for series that have none ----------------------------------------------------
+
+/** The page or API that shows this series' cover (site-specific, else the series page). */
+export function coverSource(entry) {
+  const a = getAdapter(entry.siteId);
+  return a?.cover ? a.cover.url(entry, a) : entry.url || seriesUrl(entry, { link: true }) || null;
+}
+
+/** The cover image URL in that page/API response, absolute and http(s), or null. */
+export function coverFromResponse(entry, text, base) {
+  const a = getAdapter(entry.siteId);
+  const u = a?.cover ? a.cover.pick(text) : metaImage(text);
+  if (typeof u !== 'string' || !u) return null;
+  try { const r = new URL(u, base); return /^https?:$/.test(r.protocol) ? r.href : null; } catch { return null; }
+}
+
+/** The link-preview image a page declares (og:image / twitter:image), in either attribute order. */
+function metaImage(html) {
+  for (const [tag] of String(html).matchAll(/<meta\b[^>]*>/gi)) {
+    if (!/(?:property|name)\s*=\s*["'](?:og:image(?::secure_url|:url)?|twitter:image)["']/i.test(tag)) continue;
+    const c = /content\s*=\s*["']([^"']+)["']/i.exec(tag);
+    if (c) return c[1].replace(/&amp;/g, '&');
+  }
+  return null;
+}

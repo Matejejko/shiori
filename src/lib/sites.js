@@ -38,8 +38,19 @@ const themesiaChapterForSlug = (slug) =>
 
 const json = (text) => { try { return JSON.parse(text); } catch { return null; } };
 
+// Comix: the series page embeds its data (incl. the poster) as JSON; the "detail" query is this
+// series (the others are recommendations).
+function comixPoster(html) {
+  const m = /<script[^>]*id="initial-data"[^>]*>([\s\S]*?)<\/script>/.exec(html);
+  const d = m && json(m[1]);
+  for (const [k, q] of Object.entries(d?.queries || {})) if (k.includes('"detail"')) return q?.poster?.large || q?.poster?.medium || null;
+  return null;
+}
+
 export const SITES = {
   comix: {
+    // where a missing cover is found (adapters.coverSource / coverFromResponse); default: og:image of the series page
+    cover: { url: (e, a) => `https://${a.host}/title/${encodeURIComponent(e.slug)}`, pick: comixPoster },
     name: 'Comix', host: 'comix.to', mirrors: ['comix.ws'],
     seriesRe: [`^/title/(?<slug>${SEG})/?$`],
     chapterRe: [`^/title/(?<slug>${SEG})/(?<cslug>(?<cid>\\d+)-chapter-(?<chap>${NUM_DOT}))/?$`],
@@ -89,6 +100,8 @@ export const SITES = {
     list: { requests: (e, a) => [{ url: `https://${a.host}/comics/${encodeURIComponent(stripThemesiaId(e.slug))}/` }], complete: true },
   },
   asura: {
+    // the API also lists a linked novel's and recommendations' covers: only `series` is this one
+    cover: { url: (e) => `https://api.asurascans.com/api/series/${encodeURIComponent(stripAsuraHash(e.slug))}`, pick: (t) => json(t)?.series?.cover || null },
     name: 'Asura Scans', host: 'asurascans.com', legacyHosts: ['asuracomic.net', 'asura.gg', 'asuratoon.com'],
     seriesRe: [`^/comics/(?<slug>${SEG})/?$`, `^/series/(?<slug>${SEG})/?$`],
     chapterRe: [`^/comics/(?<slug>${SEG})/chapter/(?<cslug>(?<chap>${NUM_DOT}))/?$`, `^/series/(?<slug>${SEG})/chapter/(?<cslug>(?<chap>${NUM_DOT}))/?$`],
@@ -163,6 +176,7 @@ export const SITES = {
     },
   },
   ezmanga: {
+    cover: { url: (e) => `https://vapi.ezmanga.org/api/v1/series/${encodeURIComponent(e.slug)}`, pick: (t) => json(t)?.cover || null },
     name: 'EZ Manga', host: 'ezmanga.org',
     seriesRe: [`^/series/(?<slug>${SEG})/?$`],
     chapterRe: [`^/series/(?<slug>${SEG})/(?<cslug>chapter-(?<chap>${NUM_ANY})[^/?#]*)/?$`],

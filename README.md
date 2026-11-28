@@ -162,6 +162,15 @@ read-before-pin memory (series you read without pinning on a known manga site �
 100, 30 days) all live in `library.json`. So a series you started unpinned on one PC and pin on the other
 starts at the right chapter there.
 
+## Covers
+
+Pinning takes the cover from the page you pin. A series without one — MangaPin lost some, and a few image
+servers refuse requests that don't come from their own pages — gets it looked up where the site shows it:
+comix's embedded page data, the asura and ezmanga APIs (`series.cover` / `cover`), and for every other site
+the page's link-preview image (`og:image`). That happens automatically after release checks (a few series
+per run, a failed site asked again after a week; off when release checks are off), or at once with
+*Find cover* in the series window. *Upload image…* there takes any image file. A new cover syncs like any edit.
+
 ## Moving a series to another site
 
 Sites go down or change domain. In a series' window: *Edit details* → **Move to another site** → paste the

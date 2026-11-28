@@ -1,5 +1,6 @@
 import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
 import { formPatch } from '../lib/library.js';
+import { bytesToB64 } from '../lib/base64.js';
 import { DEFAULT_LABELS, KNOWN_TAGS, tagKey } from '../lib/labels.js';
 import { computeStats, computeReading, MIN_PER_CHAPTER } from '../lib/stats.js';
 
@@ -226,6 +227,7 @@ function openEditor(id) {
     startTs: h('input', { type: 'date', value: toDateInput(e.startTs) }),
     endTs: h('input', { type: 'date', value: toDateInput(e.endTs) }),
     progress: h('input', { type: 'number', step: 'any', min: 0, value: numOrEmpty(e.progress?.chap) }),
+    coverFile: h('input', { type: 'file', accept: 'image/*', attrs: { hidden: true, 'aria-label': 'Cover image file' } }),
     moveUrl: h('input', { type: 'url', placeholder: 'https://new-site/series/…', attrs: { 'aria-label': 'Address of the series on the new site' } }),
   };
   fillTagPicker(f.tags, knownKeys('tag', true), new Set(Array.isArray(e.tags) ? e.tags : []), '(no tags)');
@@ -300,7 +302,12 @@ function openEditor(id) {
         h('label', {}, 'Add a tag', f.newTag)),
       h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Series' }),
         h('label', { class: 'full' }, 'Name', f.name),
-        h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url)),
+        h('label', { class: 'full' }, 'Series URL (optional; rebuilt from site + slug when empty)', f.url),
+        h('div', { class: 'full' }, h('div', { class: 'lbl', text: 'Cover' }),
+          h('div', { class: 'row tight' },
+            h('button', { type: 'button', class: 'ghost', text: 'Find cover', attrs: { title: 'Look the cover up on the site' }, on: { click: () => coverAction(() => send('findCover', { id })) } }),
+            h('button', { type: 'button', class: 'ghost', text: 'Upload image…', on: { click: () => f.coverFile.click() } }),
+            f.coverFile))),
       h('fieldset', { class: 'form-grid' }, h('legend', { text: 'Move to another site' }),
         h('p', { class: 'muted small full', text: 'Site gone or moved? Paste this series’ address on the new site. Progress, folder, tags, score, dates and cover stay; the old site’s chapter list is dropped and the new one is checked.' }),
         h('div', { class: 'full row tight' }, f.moveUrl, h('button', { type: 'button', class: 'ghost', text: 'Move', on: { click: async () => {
@@ -334,6 +341,15 @@ function openEditor(id) {
         h('button', { type: 'button', class: 'edit-toggle view-only', text: 'Edit details', on: { click: () => { dlg.classList.add('editing'); f.progress.focus(); } } }),
         h('button', { type: 'submit', class: 'edit-only', text: 'Save' }))),
   ));
+  // a new cover: from the site or from a file; the window reopens showing it
+  const coverAction = async (run) => {
+    msg.textContent = 'Getting the cover…'; msg.className = 'small';
+    try { await run(); dlg.close(); await load(); openEditor(id); } catch (err) { msg.textContent = err.message; msg.className = 'small err-text'; }
+  };
+  f.coverFile.addEventListener('change', () => {
+    const file = f.coverFile.files[0];
+    if (file) coverAction(async () => send('uploadCover', { id, b64: bytesToB64(new Uint8Array(await file.arrayBuffer())) }));
+  });
   dlg.escArmed = false;
   dlg.warn = (t) => { msg.textContent = t; msg.className = 'small err-text'; };
   dlg.isDirty = () => dlg.classList.contains('editing')

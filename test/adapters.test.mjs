@@ -238,3 +238,23 @@ test('sites without a chapter list method say so', async () => {
   await assert.rejects(fetchChapters({ siteId: 'kagane', slug: 'x' }, fakeFetch()), /not supported/);
   await assert.rejects(fetchChapters({ siteId: 'www.webtoon.xyz', slug: '/read/x' }, fakeFetch()), /not supported/);
 });
+
+test('covers for series without one: per-site source, the series\' own image, http(s) only', async () => {
+  const { coverSource, coverFromResponse } = await import('../src/lib/adapters.js');
+  const { readFileSync } = await import('node:fs');
+  const t = (f) => readFileSync(new URL(`./fixtures/sites/${f}`, import.meta.url), 'utf8');
+  const comix = { siteId: 'comix', slug: '1j7n-not-interested-in-dating' };
+  assert.equal(coverSource(comix), 'https://comix.to/title/1j7n-not-interested-in-dating');
+  assert.equal(coverFromResponse(comix, t('comix-series.html'), coverSource(comix)), 'https://comix.to/images/covers/0f/83/0f834a448f4e0ed6b79cab90347b9b4e9dd6677a.jpg');
+  // asura's API also lists a linked novel and recommendations: only `series` is this one
+  const asura = { siteId: 'asura', slug: 'solo-max-level-newbie-7de80a82' }; // asura's rotating 8-hex suffix
+  assert.equal(coverSource(asura), 'https://api.asurascans.com/api/series/solo-max-level-newbie');
+  assert.equal(coverFromResponse(asura, t('asura-series-detail-api.json'), coverSource(asura)), 'https://cdn.asurascans.com/asura-images/covers/solo-max-level-newbie.bac83f.webp');
+  const ez = { siteId: 'ezmanga', slug: 'the-trash-villainess-has-returned' };
+  assert.match(coverFromResponse(ez, t('ezmanga-series-detail-api.json'), coverSource(ez)), /^https:\/\/media\.ezmanga\.org\/.+The-Trash-Villainess.+\.webp$/);
+  // any other site: the page's link-preview image, either attribute order, relative URLs resolved
+  const g = { siteId: 'read.example', slug: '/manga/x', url: 'https://read.example/manga/x/' };
+  assert.equal(coverFromResponse(g, '<meta content="/img/x.jpg?a=1&amp;b=2" property="og:image">', coverSource(g)), 'https://read.example/img/x.jpg?a=1&b=2');
+  assert.equal(coverFromResponse(g, '<meta property="og:image" content="javascript:alert(1)">', coverSource(g)), null);
+  assert.equal(coverFromResponse(g, '<p>no image</p>', coverSource(g)), null);
+});

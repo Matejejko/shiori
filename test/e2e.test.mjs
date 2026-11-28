@@ -317,6 +317,33 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     await app.keyboard.press('Escape');
   });
 
+  await t.test('a series without a cover gets one uploaded from a file', async () => {
+    await app.click('#folderTabs button[data-folder=""]');
+    await app.click('#grid .tile >> nth=0');
+    await app.waitForSelector('dialog#edit[open]');
+    const id = await app.$eval('#edit .ed-title', (el) => el.textContent);
+    const png = Buffer.from(await app.evaluate(async () => {
+      const c = new OffscreenCanvas(300, 420); const g = c.getContext('2d'); g.fillStyle = '#884422'; g.fillRect(0, 0, 300, 420);
+      return [...new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer())];
+    }));
+    await app.click('#edit .edit-toggle');
+    await app.setInputFiles('#edit input[type=file]', { name: 'cover.png', mimeType: 'image/png', buffer: png });
+    await app.waitForFunction((t) => document.querySelector('dialog#edit[open] .ed-title')?.textContent === t && !document.querySelector('#edit').classList.contains('editing'), id);
+    await app.waitForSelector('dialog#edit[open] .ed-cover img.cover');
+    await app.keyboard.press('Escape');
+
+    // "Find cover" for the comix series pinned earlier: its page's embedded poster, served locally
+    await ctx.route('https://comix.to/images/**', (r) => r.fulfill({ status: 200, contentType: 'image/png', body: png }));
+    const comixId = await sw.evaluate(async () => [...(await self.shiori.store.loadLibrary()).entries.values()].find((e) => e.siteId === 'comix' && e.slug.startsWith('1j7n'))?.id);
+    assert.ok(comixId, 'the comix series pinned earlier');
+    const before = await sw.evaluate(async (i) => (await self.shiori.store.getEntry(i)).img, comixId);
+    const r = await sw.evaluate((i) => self.shiori.handlers.findCover({ id: i }), comixId);
+    const after = await sw.evaluate(async (i) => (await self.shiori.store.getEntry(i)).img, comixId);
+    assert.match(after, /^local:\d+:[0-9a-f]{32}\.webp$/);
+    assert.equal(after, r.key);
+    assert.notEqual(after, before);
+  });
+
   await t.test('the reading log counted the chapters read in this session', async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=stats]');
     await app.waitForSelector('.wk-col');

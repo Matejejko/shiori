@@ -10,7 +10,8 @@ import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
 import { locate, trackVisit, seriesOf, seenFor, noteSeen } from './lib/tracker.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
-import { seriesUrl, chapterUrl, getAdapter, siteName, matchUrl } from './lib/adapters.js';
+import { seriesUrl, chapterUrl, getAdapter, siteName, matchUrl, coverSource, coverFromResponse } from './lib/adapters.js';
+import { b64ToBytes } from './lib/base64.js';
 
 const api = globalThis.browser ?? globalThis.chrome;
 const store = new Store(api.storage.local);
@@ -37,7 +38,7 @@ store.setSyncState({ running: false }); // a worker killed mid-sync must not lea
 
 api.alarms.onAlarm.addListener((a) => {
   if (a.name === 'sync') runSync('alarm');
-  else if (a.name === 'releases') runReleaseChecks({});
+  else if (a.name === 'releases') Promise.resolve(runReleaseChecks({})).finally(() => fillMissingCovers().catch((e) => console.warn('[shiori covers]', e)));
   else if (a.name === 'sync-debounce') runSync('debounce');
 });
 
@@ -216,6 +217,52 @@ function runReleaseChecks({ ids = null, force = false }) {
 // pinning
 
 /** Runs inside the page: read title + cover candidates. Returns plain strings only. */
+// ---------------------------------------------------------------------------------------
+// covers for series that have none (MangaPin lost some; some CDNs refused at pin time)
+
+/** Store a new cover and point the series at it (a normal field edit, so it syncs). */
+function setCover(id, cover) {
+  return store.withLock(async () => {
+    await store.putCovers([[cover.key, cover.b64]]); // before the entry that uses it (see Store cover cleanup)
+    const lib = await store.loadLibrary();
+    if (!lib.entries.has(id)) throw new Error('no such entry');
+    editEntry(lib, id, { img: cover.key });
+    await store.saveLibrary(lib);
+    return { key: cover.key };
+  });
+}
+
+/** Look the cover up where the site shows it (see adapters.coverSource) and use it. */
+async function findCover(id) {
+  const e = (await store.loadLibrary()).entries.get(id);
+  if (!e) throw new Error('no such entry');
+  const src = coverSource(e);
+  if (!src) throw new Error('No page to look for this series on.');
+  const img = coverFromResponse(e, await fetchText({ url: src }), src);
+  if (!img) throw new Error('The site shows no cover for this series.');
+  return setCover(id, await makeCover(await fetchImage(img)));
+}
+
+const COVER_RETRY_MS = 7 * 86400e3; // a site that had no cover for a series is asked again after a week
+const COVERS_PER_RUN = 5;
+/** After release checks: a few series without any cover (here or on the server) get one looked up. */
+async function fillMissingCovers() {
+  if (!(await store.getConfig()).releaseChecks) return; // the same switch keeps Shiori off the sites
+  const lib = await store.loadLibrary();
+  const have = new Set(await store.coverKeys());
+  const onServer = new Set((await store.getSyncState()).remoteCovers || []); // sync brings those
+  const { coverTry = {} } = await api.storage.local.get('coverTry');
+  const now = Date.now();
+  const missing = (e) => !e.img || (String(e.img).startsWith('local:') && !have.has(e.img) && !onServer.has(e.img));
+  const todo = [...lib.entries.values()].filter((e) => missing(e) && !(now - (coverTry[e.id] || 0) < COVER_RETRY_MS)).slice(0, COVERS_PER_RUN);
+  for (const e of todo) {
+    coverTry[e.id] = now;
+    try { await findCover(e.id); delete coverTry[e.id]; } catch (err) { console.info('[shiori covers]', e.name, err.message); }
+  }
+  for (const id of Object.keys(coverTry)) if (!lib.entries.has(id)) delete coverTry[id];
+  await api.storage.local.set({ coverTry });
+}
+
 function scrapePage() {
   const meta = (sel) => document.querySelector(sel)?.getAttribute('content') || '';
   const abs = (u) => { try { return new URL(u, location.href).href; } catch { return ''; } };
@@ -390,6 +437,14 @@ const handlers = {
     });
     if (getAdapter(siteId)?.list && (await store.getConfig()).releaseChecks) runReleaseChecks({ ids: [newId], force: true }).catch(() => {});
     return { id: newId, siteId };
+  },
+  async findCover({ id }) { return findCover(id); },
+  async uploadCover({ id, b64 }) {
+    const bytes = b64ToBytes(String(b64 || ''));
+    if (!bytes.length || bytes.length > 15 * 1024 * 1024) throw new Error('Choose an image up to 15 MB.');
+    let cover;
+    try { cover = await makeCover(new Blob([bytes])); } catch { throw new Error('That file is not an image Shiori can read.'); }
+    return setCover(id, cover);
   },
   async remove({ id }) {
     return store.withLock(async () => {
