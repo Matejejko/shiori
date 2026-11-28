@@ -1,9 +1,9 @@
-import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl } from '../ui/dom.js';
+import { api, h, clear, send, fmtChap, ago, coverUrl, syncSummary, labelName, folderName, safeHttpUrl, applyTheme } from '../ui/dom.js';
 import { formPatch } from '../lib/library.js';
 import { bytesToB64 } from '../lib/base64.js';
 import { DEFAULT_LABELS, KNOWN_TAGS, tagKey } from '../lib/labels.js';
 import { computeStats, computeReading, MIN_PER_CHAPTER } from '../lib/stats.js';
-import { renderPageIndicator, INDICATOR_ACCENTS } from '../lib/page-indicator.js';
+import { renderPageIndicator, ACCENTS } from '../lib/page-indicator.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { lib: null, covers: {}, st: null, folder: '' };
@@ -54,6 +54,7 @@ function renderFolderTabs() {
 async function load() {
   const [st, lib] = await Promise.all([send('state'), send('library')]);
   state.st = st; state.lib = lib;
+  applyTheme(st.cfg);
   const keys = [...new Set(lib.entries.map((e) => e.img).filter((k) => k && !(k in state.covers)))];
   if (keys.length) Object.assign(state.covers, await send('covers', { keys }));
   renderSyncPill();
@@ -588,33 +589,34 @@ $('grantHosts').addEventListener('click', async () => {
 });
 
 // ---------------------------------------------------------------------------------------
-// settings: the reading indicator (saved on every change; previewed in this page's corner)
+// settings: appearance (all of Shiori) and the reading indicator; saved on every change
 
 const prefsForm = () => $('prefs');
 function previewIndicator() {
   const cfg = state.st?.cfg || {};
-  renderPageIndicator(cfg.pageIndicator === false ? null : { state: 'pinned', read: 22, latest: 40, here: null, nextChap: 23, nextUrl: 'https://example.org/', theme: cfg.indicatorTheme, accent: cfg.indicatorAccent, preview: true });
+  renderPageIndicator(cfg.pageIndicator === false ? null : { state: 'pinned', read: 22, latest: 40, here: null, nextChap: 23, nextUrl: 'https://example.org/', theme: cfg.theme, accent: cfg.accent, preview: true });
 }
 function renderPrefs() {
   if (!state.st) return;
   const f = prefsForm(), cfg = state.st.cfg;
   f.pageIndicator.checked = cfg.pageIndicator !== false;
-  for (const r of f.querySelectorAll('input[name=indicatorTheme]')) r.checked = r.value === (cfg.indicatorTheme || 'auto');
+  for (const r of f.querySelectorAll('input[name=theme]')) r.checked = r.value === (cfg.theme || 'auto');
   const sw = f.querySelector('.swatches');
   for (const old of sw.querySelectorAll('label')) old.remove();
-  for (const [name, hex] of INDICATOR_ACCENTS) {
-    const input = h('input', { type: 'radio', name: 'indicatorAccent', value: hex, checked: hex === (cfg.indicatorAccent || '#c2410c'), attrs: { 'aria-label': name } });
+  for (const [name, hex] of ACCENTS) {
+    const input = h('input', { type: 'radio', name: 'accent', value: hex, checked: hex === (cfg.accent || ''), attrs: { 'aria-label': name } });
     const dot = h('span', { class: 'swatch', attrs: { title: name } });
-    dot.style.background = hex;
+    dot.style.background = hex || '#c2410c';
     sw.append(h('label', { class: 'check' }, input, dot));
   }
   previewIndicator();
 }
 prefsForm().addEventListener('change', async () => {
   const f = prefsForm();
-  const prefs = { pageIndicator: f.pageIndicator.checked, indicatorTheme: f.querySelector('input[name=indicatorTheme]:checked')?.value, indicatorAccent: f.querySelector('input[name=indicatorAccent]:checked')?.value };
+  const prefs = { pageIndicator: f.pageIndicator.checked, theme: f.querySelector('input[name=theme]:checked')?.value, accent: f.querySelector('input[name=accent]:checked')?.value };
   try {
     state.st.cfg = (await send('savePrefs', { prefs })).cfg;
+    applyTheme(state.st.cfg);
     $('prefsMsg').textContent = 'Saved.'; $('prefsMsg').className = 'small ok-text';
   } catch (e) { $('prefsMsg').textContent = e.message; $('prefsMsg').className = 'small err-text'; }
   previewIndicator();

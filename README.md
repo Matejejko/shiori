@@ -175,8 +175,14 @@ the bottom-right corner shows where you are:
 
 The chapter to continue with comes from what Shiori knows, else from the series page's own chapter links
 (and the chapter data some sites embed), looked at again a moment later for lists that load late.
-× hides it on that page; ☰ → **Settings** turns it on/off and sets its theme (system / dark / light) and
-accent colour, with a live preview. Folder names are set on the same page. It lives in a closed
+× hides it on that page; ☰ → **Settings** turns it on/off (live preview in that page's corner).
+
+## Appearance
+
+☰ → **Settings** → *Appearance* sets the look of all of Shiori — library page, popup, reading indicator,
+the toolbar badge: theme (follow the system / dark / light) and accent colour (Shiori's orange or one of
+six others, all readable with white text). It is stored in the settings and cached so each page applies
+it before it is drawn (no white flash in dark mode). Folder names are set on the same page. It lives in a closed
 shadow root in the extension's isolated world: the page can't read your progress from it or restyle it,
 and its only action, Pin, can only pin the tab it is on.
 

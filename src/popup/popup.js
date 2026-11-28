@@ -1,10 +1,11 @@
-import { api, h, clear, send, fmtChap, coverUrl, syncSummary, folderName, safeHttpUrl } from '../ui/dom.js';
+import { api, h, clear, send, fmtChap, coverUrl, syncSummary, folderName, safeHttpUrl, applyTheme } from '../ui/dom.js';
 
 const $ = (id) => document.getElementById(id);
 let tabId = null;
 
 async function renderSync() {
   const st = await send('state');
+  applyTheme(st.cfg); // in case it changed since theme-boot.js read the cache
   const s = syncSummary(st.sync, st.cfg, st.hasToken);
   const pill = $('sync');
   pill.className = 'pill ' + s.cls;

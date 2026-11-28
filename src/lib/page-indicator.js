@@ -9,8 +9,11 @@
  *   nextChap?:number|null, nextUrl?:string|null, theme?:'auto'|'light'|'dark', accent?:string, preview?:boolean}} info
  *   preview: Settings shows it on the extension page: buttons do nothing.
  */
-/** Accent choices in Settings: all dark enough for white button text (contrast ≥ 4.5:1). */
-export const INDICATOR_ACCENTS = [['Orange', '#c2410c'], ['Red', '#b91c1c'], ['Pink', '#be185d'], ['Purple', '#7c3aed'], ['Blue', '#2563eb'], ['Teal', '#0f766e'], ['Green', '#15803d']];
+/**
+ * Accent colours for all of Shiori (Settings). '' = Shiori's orange (#c2410c, brighter #f97316 in
+ * dark mode); the others are dark enough for white text on them (contrast ≥ 4.5:1) in both themes.
+ */
+export const ACCENTS = [['Orange', ''], ['Red', '#b91c1c'], ['Pink', '#be185d'], ['Purple', '#7c3aed'], ['Blue', '#2563eb'], ['Teal', '#0f766e'], ['Green', '#15803d']];
 
 export function renderPageIndicator(info) {
   const st = globalThis.__shioriIndicator || (globalThis.__shioriIndicator = {});
@@ -25,13 +28,13 @@ export function renderPageIndicator(info) {
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const ch = (n) => String(n);
 
-  // your colours (Settings): a theme and an accent; accents are dark enough for white button text
-  const accent = /^#[0-9a-f]{6}$/i.test(info.accent || '') ? info.accent : '#c2410c';
-  const dark = `.box { --bg: #22201d; --ink: #ece8e1; --ink2: #a39d93; --line: #37332e; --hover: rgba(255,255,255,.08); --shadow: rgba(0,0,0,.5); }`;
+  // your look (Settings): theme and accent, as on Shiori's own pages
+  const accent = /^#[0-9a-f]{6}$/i.test(info.accent || '') ? info.accent : null;
+  const dark = `.box { --bg: #22201d; --ink: #ece8e1; --ink2: #a39d93; --line: #37332e; --hover: rgba(255,255,255,.08); --shadow: rgba(0,0,0,.5);${accent ? '' : ' --ac: #f97316; --acink: #1b1209;'} }`;
   const style = el('style');
   style.textContent = `
     :host { all: initial; }
-    .box { --bg: #ffffff; --ink: #1f1d1a; --ink2: #6b665e; --line: #e3ded6; --hover: rgba(0,0,0,.06); --shadow: rgba(0,0,0,.18); --ac: ${accent};
+    .box { --bg: #ffffff; --ink: #1f1d1a; --ink2: #6b665e; --line: #e3ded6; --hover: rgba(0,0,0,.06); --shadow: rgba(0,0,0,.18); --ac: ${accent || '#c2410c'}; --acink: #fff;
       position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; display: flex; align-items: center; gap: 10px;
       padding: 8px 8px 8px 10px; border-radius: 12px; font: 500 13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
       background: var(--bg); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 6px 24px var(--shadow); max-width: calc(100vw - 32px); }
@@ -41,7 +44,7 @@ export function renderPageIndicator(info) {
     .lbl { font-size: 11px; color: var(--ink2); }
     .main { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .of { font-weight: 500; color: var(--ink2); }
-    .btn { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 8px; background: var(--ac); color: #fff; font-weight: 650; white-space: nowrap; }
+    .btn { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 8px; background: var(--ac); color: var(--acink); font-weight: 650; white-space: nowrap; }
     .btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
     .btn:focus-visible, .x:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
     .x { all: unset; cursor: pointer; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--ink2); font-size: 15px; }

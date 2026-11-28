@@ -1,4 +1,19 @@
 import { DEFAULT_LABELS } from '../lib/labels.js';
+import { ACCENTS } from '../lib/page-indicator.js';
+
+/**
+ * Your look (Settings), for every Shiori page: theme 'auto' | 'light' | 'dark' and an accent ('' =
+ * Shiori's orange, else one of ACCENTS). Also cached for theme-boot.js, which applies it before paint.
+ */
+export function applyTheme(cfg) {
+  const r = document.documentElement;
+  const theme = cfg && (cfg.theme === 'light' || cfg.theme === 'dark') ? cfg.theme : '';
+  if (theme) r.dataset.theme = theme; else delete r.dataset.theme;
+  const ac = ACCENTS.some(([, hex]) => hex && hex === cfg?.accent) ? cfg.accent : '';
+  const vars = { '--ai': ac, '--ai-ink': ac && '#ffffff', '--ai-soft': ac && `color-mix(in srgb, ${ac} 16%, var(--sheet))` };
+  for (const [k, v] of Object.entries(vars)) { if (v) r.style.setProperty(k, v); else r.style.removeProperty(k); }
+  try { localStorage.setItem('shiori.look', JSON.stringify({ theme, accent: ac })); } catch { /* no cache: a brief system-theme flash */ }
+}
 // Safe DOM construction. Entry data (names, URLs) comes from websites: it only ever goes
 // into textContent / validated attributes — never innerHTML.
 

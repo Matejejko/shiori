@@ -270,7 +270,7 @@ body:not(.in-settings) #settingsNav { display: none; }
 .wk-max { position: absolute; top: 0; left: 0; font-size: 11px; font-variant-numeric: tabular-nums; }
 .wk-col { position: relative; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; outline: none; cursor: default; }
 .wk-col:focus-visible { box-shadow: 0 0 0 2px var(--ai); border-radius: 4px; }
-.wk-bar { width: min(24px, 70%); background: var(--wk-bar); border-radius: 4px 4px 0 0; }
+.wk-bar { width: min(24px, 70%); background: var(--ai); border-radius: 4px 4px 0 0; }
 .wk-val { font-size: 12px; font-weight: 650; color: var(--ink); font-variant-numeric: tabular-nums; margin-bottom: 2px; }
 .wk-axis { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; font-size: 11px; }
 .wk-axis span { text-align: center; white-space: nowrap; }
@@ -278,8 +278,6 @@ body:not(.in-settings) #settingsNav { display: none; }
 .wk-tip[hidden] { display: none; }
 .wk-table table { border-collapse: collapse; font-size: 13px; margin-top: var(--s2); }
 .wk-table td, .wk-table th { padding: 2px 12px 2px 0; text-align: left; font-variant-numeric: tabular-nums; }
-:root { --wk-bar: #c2410c; }
-@media (prefers-color-scheme: dark) { :root { --wk-bar: #ea580c; } }
 
 /* ---- phone width ------------------------------------------------------------------------- */
 @media (max-width: 700px) {

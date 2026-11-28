@@ -9,7 +9,7 @@ import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
 import { locate, trackVisit, seriesOf, seenFor, noteSeen, pageInfo, readTarget } from './lib/tracker.js';
-import { renderPageIndicator, INDICATOR_ACCENTS } from './lib/page-indicator.js';
+import { renderPageIndicator, ACCENTS } from './lib/page-indicator.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName, matchUrl, coverSource, coverFromResponse } from './lib/adapters.js';
 import { b64ToBytes } from './lib/base64.js';
@@ -70,7 +70,7 @@ async function updateBadge() {
     let n = 0;
     for (const e of lib.entries.values()) if (e.folder === cfg.releaseFolder && isUnread(e)) n++;
     await api.action.setBadgeText({ text: n ? String(n) : '' });
-    await api.action.setBadgeBackgroundColor({ color: '#c2410c' });
+    await api.action.setBadgeBackgroundColor({ color: cfg.accent || '#c2410c' });
   } catch { /* badge is cosmetic */ }
 }
 
@@ -155,8 +155,8 @@ async function showIndicator(tabId, url, again = true) {
       const t = readTarget(got.lib, url, (res && res.result) || [], info.state === 'pinned' && info.here !== null ? Math.max(info.here, info.read ?? -Infinity) : info.read);
       if (t) { info.nextUrl = t.url; info.nextChap = t.chap; }
     }
-    info.theme = got.cfg.indicatorTheme;
-    info.accent = got.cfg.indicatorAccent;
+    info.theme = got.cfg.theme;
+    info.accent = got.cfg.accent;
     await api.scripting.executeScript({ target: { tabId }, func: renderPageIndicator, args: [info] });
     if (!info.nextUrl && again) setTimeout(() => api.tabs.get(tabId).then((t) => { if (t.url === url) showIndicator(tabId, url, false); }, () => {}), 2000);
   } catch { /* pages the extension may not touch (store, other extensions, not loaded yet) */ }
@@ -495,9 +495,11 @@ const handlers = {
     // only these, only valid values (they reach every manga page's indicator)
     const p = prefs || {}, out = {};
     if (typeof p.pageIndicator === 'boolean') out.pageIndicator = p.pageIndicator;
-    if (['auto', 'light', 'dark'].includes(p.indicatorTheme)) out.indicatorTheme = p.indicatorTheme;
-    if (INDICATOR_ACCENTS.some(([, hex]) => hex === p.indicatorAccent)) out.indicatorAccent = p.indicatorAccent;
-    return { cfg: await store.setConfig(out) };
+    if (['auto', 'light', 'dark'].includes(p.theme)) out.theme = p.theme;
+    if (ACCENTS.some(([, hex]) => hex === p.accent)) out.accent = p.accent;
+    const cfg = await store.setConfig(out);
+    updateBadge(); // the toolbar badge takes the accent too
+    return { cfg };
   },
   async findCover({ id }) { return findCover(id); },
   async uploadCover({ id, b64 }) {

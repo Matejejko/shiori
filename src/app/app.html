@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shiori Library</title>
+  <script src="../ui/theme-boot.js"></script>
   <link rel="stylesheet" href="../ui/base.css">
   <link rel="stylesheet" href="app.css">
 </head>
@@ -115,19 +116,25 @@
     </section>
 
     <section id="tab-prefs" class="pane" hidden>
-      <form id="prefs" class="card stack">
-        <h2>Reading indicator</h2>
-        <p class="muted small">The box in the bottom-right corner of manga pages: where you are, Continue / Start reading, and Pin. The preview is in this page's corner.</p>
-        <label class="check"><input name="pageIndicator" type="checkbox"> Show it on manga pages</label>
-        <fieldset class="seg" aria-label="Theme">
-          <legend class="lbl">Theme</legend>
-          <label class="check"><input type="radio" name="indicatorTheme" value="auto"> Follow the system</label>
-          <label class="check"><input type="radio" name="indicatorTheme" value="dark"> Dark</label>
-          <label class="check"><input type="radio" name="indicatorTheme" value="light"> Light</label>
-        </fieldset>
-        <fieldset class="seg swatches" aria-label="Accent colour">
-          <legend class="lbl">Accent colour</legend>
-        </fieldset>
+      <form id="prefs" class="stack">
+        <div class="card stack">
+          <h2>Appearance</h2>
+          <p class="muted small">For all of Shiori: this page, the popup and the reading indicator on manga pages.</p>
+          <fieldset class="seg" aria-label="Theme">
+            <legend class="lbl">Theme</legend>
+            <label class="check"><input type="radio" name="theme" value="auto"> Follow the system</label>
+            <label class="check"><input type="radio" name="theme" value="dark"> Dark</label>
+            <label class="check"><input type="radio" name="theme" value="light"> Light</label>
+          </fieldset>
+          <fieldset class="seg swatches" aria-label="Accent colour">
+            <legend class="lbl">Accent colour</legend>
+          </fieldset>
+        </div>
+        <div class="card stack">
+          <h2>Reading indicator</h2>
+          <p class="muted small">The box in the bottom-right corner of manga pages: where you are, Continue / Start reading, and Pin. The preview is in this page's corner.</p>
+          <label class="check"><input name="pageIndicator" type="checkbox"> Show it on manga pages</label>
+        </div>
         <div class="row tight"><span id="prefsMsg" class="small" aria-live="polite"></span></div>
       </form>
       <h2 class="section-h">Folder names</h2>

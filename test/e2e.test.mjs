@@ -355,15 +355,29 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.notEqual(after, before);
   });
 
-  await t.test('Settings: reading indicator on/off, theme and accent, with a preview here', async () => {
+  await t.test('Settings: theme and accent for all of Shiori, reading indicator on/off, with a preview', async () => {
     await app.click('#openSettings'); await app.click('#menu button[data-tab=prefs]');
     await app.waitForFunction(() => globalThis.__shioriIndicator?.host?.isConnected);
     assert.match(await app.evaluate(() => globalThis.__shioriIndicator.text()), /Chapter 22 of 40.*Continue ch 23/);
-    await app.check('#prefs input[name=indicatorTheme][value=dark]');
-    await app.check('#prefs input[name=indicatorAccent][value="#2563eb"]');
-    await app.waitForFunction(() => document.querySelector('#prefsMsg')?.textContent === 'Saved.');
+    await app.check('#prefs input[name=theme][value=dark]');
+    await app.check('#prefs input[name=accent][value="#2563eb"]');
+    await app.waitForFunction(() => document.querySelector('#prefsMsg')?.textContent === 'Saved.' && document.documentElement.style.getPropertyValue('--ai') === '#2563eb');
     const cfg = await sw.evaluate(async () => (await self.shiori.store.getConfig()));
-    assert.deepEqual([cfg.indicatorTheme, cfg.indicatorAccent, cfg.pageIndicator], ['dark', '#2563eb', true]);
+    assert.deepEqual([cfg.theme, cfg.accent, cfg.pageIndicator], ['dark', '#2563eb', true]);
+    // the whole page follows: dark theme forced, the accent on Shiori's buttons
+    assert.equal(await app.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    assert.equal(await app.evaluate(() => getComputedStyle(document.body).backgroundColor), 'rgb(23, 22, 20)');
+    assert.equal(await app.evaluate(() => getComputedStyle(document.querySelector('#syncNow')).color !== '' && getComputedStyle(document.documentElement).getPropertyValue('--ai').trim()), '#2563eb');
+    // the popup too, from its first paint (theme-boot.js reads the cached look)
+    const pop = await ctx.newPage();
+    await pop.goto(`${base}/src/popup/popup.html`);
+    assert.equal(await pop.evaluate(() => document.documentElement.dataset.theme), 'dark');
+    assert.equal(await pop.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--ai').trim()), '#2563eb');
+    await pop.close();
+    // back to the defaults for the tests after this one
+    await app.check('#prefs input[name=theme][value=auto]');
+    await app.check('#prefs input[name=accent][value=""]');
+    await app.waitForFunction(() => !document.documentElement.dataset.theme && !document.documentElement.style.getPropertyValue('--ai'));
     assert.equal(await app.$$eval('.labels .card[data-kind=folder] .rows .row', (r) => r.length) >= 5, true, 'folder names live here now');
     await app.uncheck('#prefs input[name=pageIndicator]');
     await app.waitForFunction(() => !globalThis.__shioriIndicator?.host?.isConnected);

@@ -13,8 +13,10 @@
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Noto Sans", "Hiragino Sans", "Noto Sans CJK JP", "Apple SD Gothic Neo", sans-serif;
   color-scheme: light dark;
 }
+/* theme (Settings): follows the system unless <html data-theme="light|dark"> forces one; an accent
+   colour, when chosen, is set inline on <html> (--ai, --ai-ink, --ai-soft) — see ui/dom.js applyTheme */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #171614; --sheet: #22201d; --ink: #ece8e1; --ink-2: #a39d93;
     --line: #37332e; --edge: #77706a;
     --ai: #f97316; --ai-ink: #1b1209; --ai-soft: #3a2a1d;
@@ -23,6 +25,16 @@
     --shadow-float: 0 16px 40px rgb(0 0 0 / .5);
   }
 }
+:root[data-theme="dark"] {
+    --paper: #171614; --sheet: #22201d; --ink: #ece8e1; --ink-2: #a39d93;
+    --line: #37332e; --edge: #77706a;
+    --ai: #f97316; --ai-ink: #1b1209; --ai-soft: #3a2a1d;
+    --ok: #4ade80; --err: #f87171; --warn: #facc15;
+    --tone: #3d3833;
+    --shadow-float: 0 16px 40px rgb(0 0 0 / .5);
+  color-scheme: dark;
+}
+:root[data-theme="light"] { color-scheme: light; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; background: var(--paper); color: var(--ink); font: 14px/1.45 var(--font); }
