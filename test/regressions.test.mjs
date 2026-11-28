@@ -445,3 +445,13 @@ test('page indicator: where you are on pinned series, what you read on unpinned 
   assert.equal(pageInfo(lib, 'https://example.org/blog/chapter-4/'), null); // unknown site, not pinned
   assert.equal(pageInfo(lib, 'https://arenascan.com/'), null); // not a series page
 });
+
+test('page indicator: the next chapter from the page\'s own links (pinned or not), never another series\'', async () => {
+  const { readTarget } = await import('../src/lib/tracker.js');
+  const lib = emptyLibrary();
+  addEntry(lib, { siteId: 'comix', slug: '1j7n-not-interested-in-dating', name: 'N', progress: { chap: 12, ts: 1 }, cLang: 'en', folder: 1, tags: [], ts: 1, createTs: 1, id: 'AAAAAAAAAA' });
+  const links = ['https://comix.to/title/1j7n-not-interested-in-dating/9866083-chapter-68', 'https://comix.to/title/1j7n-not-interested-in-dating/9001-chapter-13', 'https://comix.to/title/1j7n-not-interested-in-dating/9000-chapter-1', 'https://comix.to/title/zzzz-other/1-chapter-13', 'javascript:alert(1)'];
+  assert.deepEqual(readTarget(lib, 'https://comix.to/title/1j7n-not-interested-in-dating', links, 12), { chap: 13, url: 'https://comix.to/title/1j7n-not-interested-in-dating/9001-chapter-13' });
+  assert.deepEqual(readTarget(lib, 'https://comix.to/title/zzzz-other', links, null), { chap: 13, url: 'https://comix.to/title/zzzz-other/1-chapter-13' }); // start reading
+  assert.equal(readTarget(lib, 'https://comix.to/title/zzzz-other', links, 13), null);
+});

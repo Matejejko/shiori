@@ -167,3 +167,25 @@ export function pageInfo(lib, url) {
   const seen = seenFor(lib.seen, s.siteId, s.slug);
   return { state: seen ? 'seen' : 'new', read: seen ? seen.chap : null, here: isNum(s.chap) ? s.chap : null };
 }
+
+/**
+ * The chapter to read next, from the links on the series' own page (they know addresses Shiori may
+ * not): the first chapter after the one you're at, or the first chapter if you haven't started.
+ * @param {string[]} candidates absolute URLs found on the page
+ * @returns {{chap:number, url:string} | null}
+ */
+export function readTarget(lib, pageUrl, candidates, read) {
+  const { entry } = locate(lib, pageUrl);
+  const page = entry ? null : seriesOf(pageUrl);
+  const key = page && `${page.siteId}|${slugKey(page.siteId, page.slug)}`;
+  let best = null;
+  for (const u of candidates) {
+    if (typeof u !== 'string' || !/^https?:\/\//i.test(u)) continue;
+    let chap = null;
+    if (entry) { const l = locate(lib, u); if (l.entry === entry && l.match && l.match.kind === 'chapter') chap = l.match.chap; }
+    else { const s = seriesOf(u); if (s && !s.generic && `${s.siteId}|${slugKey(s.siteId, s.slug)}` === key) chap = s.chap; }
+    if (!isNum(chap) || (isNum(read) && chap <= read)) continue;
+    if (!best || chap < best.chap) best = { chap, url: u.split('#')[0] };
+  }
+  return best;
+}

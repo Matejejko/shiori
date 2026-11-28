@@ -8,8 +8,8 @@ import { syncOnce } from './lib/sync.js';
 import { planImport, exportBackup, editEntry, setProgress, deleteEntry, addEntry, newId, findBySeries, isUnread, moveEntry, countRead } from './lib/library.js';
 import { exportFileName, ENTRY_FIELD_ORDER } from './lib/mangapin.js';
 import { makeCover, fetchImage } from './lib/cover.js';
-import { locate, trackVisit, seriesOf, seenFor, noteSeen, pageInfo } from './lib/tracker.js';
-import { renderPageIndicator } from './lib/page-indicator.js';
+import { locate, trackVisit, seriesOf, seenFor, noteSeen, pageInfo, readTarget } from './lib/tracker.js';
+import { renderPageIndicator, INDICATOR_ACCENTS } from './lib/page-indicator.js';
 import { applyChapters, fetchChapters, dueEntries, isBlockedPage } from './lib/releases.js';
 import { seriesUrl, chapterUrl, getAdapter, siteName, matchUrl, coverSource, coverFromResponse } from './lib/adapters.js';
 import { b64ToBytes } from './lib/base64.js';
@@ -127,13 +127,39 @@ function runSync(reason) {
 // ---------------------------------------------------------------------------------------
 // tracking
 
-/** The reading indicator on this tab's page (after any tracking queued before it). */
-function showIndicator(tabId, url) {
-  return store.withLock(async () => {
-    if (!(await store.getConfig()).pageIndicator) return null;
-    return pageInfo(await store.loadLibrary(), url);
-  }).then((info) => (info === null ? null : api.scripting.executeScript({ target: { tabId }, func: renderPageIndicator, args: [info] })))
-    .catch(() => {}); // pages the extension may not touch (store, other extensions, not loaded yet)
+/** Runs inside the page: chapter-link candidates (links, and URLs in the page's embedded data). */
+function pageLinks() {
+  const out = new Set();
+  for (const a of document.querySelectorAll('a[href]')) out.add(a.href);
+  for (const s of document.querySelectorAll('script#initial-data, script#__NEXT_DATA__, script[type="application/json"]')) {
+    for (const m of s.textContent.matchAll(/"((?:https?:\/\/|\/)[^"\s\\]{2,300})"/g)) { try { out.add(new URL(m[1], location.href).href); } catch { /* not a URL */ } }
+  }
+  return [...out].slice(0, 5000);
+}
+
+/**
+ * The reading indicator on this tab's page (after any tracking queued before it). Without a known
+ * next chapter it looks for one among the page's own links; sites that render their chapter list
+ * after loading get one more look a moment later.
+ */
+async function showIndicator(tabId, url, again = true) {
+  try {
+    const got = await store.withLock(async () => {
+      const cfg = await store.getConfig();
+      return cfg.pageIndicator ? { cfg, lib: await store.loadLibrary() } : null;
+    });
+    const info = got && pageInfo(got.lib, url);
+    if (!info) return;
+    if (!info.nextUrl) {
+      const [res] = await api.scripting.executeScript({ target: { tabId }, func: pageLinks });
+      const t = readTarget(got.lib, url, (res && res.result) || [], info.state === 'pinned' && info.here !== null ? Math.max(info.here, info.read ?? -Infinity) : info.read);
+      if (t) { info.nextUrl = t.url; info.nextChap = t.chap; }
+    }
+    info.theme = got.cfg.indicatorTheme;
+    info.accent = got.cfg.indicatorAccent;
+    await api.scripting.executeScript({ target: { tabId }, func: renderPageIndicator, args: [info] });
+    if (!info.nextUrl && again) setTimeout(() => api.tabs.get(tabId).then((t) => { if (t.url === url) showIndicator(tabId, url, false); }, () => {}), 2000);
+  } catch { /* pages the extension may not touch (store, other extensions, not loaded yet) */ }
 }
 const lastSeen = new Map(); // tabId -> url (skip duplicate onUpdated events)
 api.tabs.onUpdated.addListener((tabId, change, tab) => {
@@ -464,6 +490,14 @@ const handlers = {
     });
     if (getAdapter(siteId)?.list && (await store.getConfig()).releaseChecks) runReleaseChecks({ ids: [newId], force: true }).catch(() => {});
     return { id: newId, siteId };
+  },
+  async savePrefs({ prefs }) {
+    // only these, only valid values (they reach every manga page's indicator)
+    const p = prefs || {}, out = {};
+    if (typeof p.pageIndicator === 'boolean') out.pageIndicator = p.pageIndicator;
+    if (['auto', 'light', 'dark'].includes(p.indicatorTheme)) out.indicatorTheme = p.indicatorTheme;
+    if (INDICATOR_ACCENTS.some(([, hex]) => hex === p.indicatorAccent)) out.indicatorAccent = p.indicatorAccent;
+    return { cfg: await store.setConfig(out) };
   },
   async findCover({ id }) { return findCover(id); },
   async uploadCover({ id, b64 }) {

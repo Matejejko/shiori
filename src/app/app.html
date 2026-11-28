@@ -24,7 +24,7 @@
       <button type="button" data-tab="stats">Stats</button>
       <button type="button" data-tab="settings">Sync settings</button>
       <button type="button" data-tab="io">Import / Export</button>
-      <button type="button" data-tab="labels">Labels</button>
+      <button type="button" data-tab="prefs">Settings</button>
     </div>
   </header>
 
@@ -33,7 +33,7 @@
       <button type="button" data-tab="stats" class="tab">Stats</button>
       <button type="button" data-tab="settings" class="tab">Sync</button>
       <button type="button" data-tab="io" class="tab">Import / Export</button>
-      <button type="button" data-tab="labels" class="tab">Labels</button>
+      <button type="button" data-tab="prefs" class="tab">Settings</button>
     </nav>
     <section id="tab-library" class="pane">
       <div class="toolbar">
@@ -96,7 +96,6 @@
         <p class="muted small">Create an app token in OpenCloud (Settings → App Tokens, or <code>opencloud auth-app create</code>). It is stored only in this browser, never synced. Library lives in <code>/Shiori/</code> on the server.</p>
         <label class="check"><input name="autoSync" type="checkbox"> Sync automatically (5 s after a change, every 15 min)</label>
         <label class="check"><input name="releaseChecks" type="checkbox"> Check for new chapters every 6 h</label>
-        <label class="check"><input name="pageIndicator" type="checkbox"> Show where you are on manga pages (bottom right)</label>
         <label>Release-check folder <select name="releaseFolder"></select></label>
         <div class="row tight">
           <button type="submit">Save</button>
@@ -115,10 +114,26 @@
       </div>
     </section>
 
-    <section id="tab-labels" class="pane" hidden>
+    <section id="tab-prefs" class="pane" hidden>
+      <form id="prefs" class="card stack">
+        <h2>Reading indicator</h2>
+        <p class="muted small">The box in the bottom-right corner of manga pages: where you are, Continue / Start reading, and Pin. The preview is in this page's corner.</p>
+        <label class="check"><input name="pageIndicator" type="checkbox"> Show it on manga pages</label>
+        <fieldset class="seg" aria-label="Theme">
+          <legend class="lbl">Theme</legend>
+          <label class="check"><input type="radio" name="indicatorTheme" value="auto"> Follow the system</label>
+          <label class="check"><input type="radio" name="indicatorTheme" value="dark"> Dark</label>
+          <label class="check"><input type="radio" name="indicatorTheme" value="light"> Light</label>
+        </fieldset>
+        <fieldset class="seg swatches" aria-label="Accent colour">
+          <legend class="lbl">Accent colour</legend>
+        </fieldset>
+        <div class="row tight"><span id="prefsMsg" class="small" aria-live="polite"></span></div>
+      </form>
+      <h2 class="section-h">Folder names</h2>
       <p class="muted small">Folders are numbered; name them here (names sync between your devices). Tags need no setup: they are the genre names the sites use.</p>
       <div class="labels">
-        <div class="card" data-kind="folder"><h2>Folders</h2><div class="rows"></div><button type="button" class="ghost add">Add</button></div>
+        <div class="card" data-kind="folder"><div class="rows"></div><button type="button" class="ghost add">Add</button></div>
       </div>
       <div class="row tight"><button id="saveLabels" type="button">Save labels</button><span id="labelsMsg" class="small"></span></div>
     </section>

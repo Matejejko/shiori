@@ -168,12 +168,15 @@ starts at the right chapter there.
 On a series or chapter page of a site Shiori knows (or any page of a series you pinned), a small box in
 the bottom-right corner shows where you are:
 
-- **pinned:** *Chapter 22 of 40* — with **Continue ch 23** when the next chapter's address is known; on a
-  chapter page it shows that chapter as saved;
-- **not pinned:** *Read up to ch 7* (from the read-before-pin memory) or *Not started*, with **Pin**
-  (pinning starts at the chapter you reached).
+- **pinned:** *Chapter 22 of 40* with **Continue ch 23** (or **Start reading ch 1**); on a chapter page it
+  shows that chapter as saved;
+- **not pinned:** *Read up to ch 7* (from the read-before-pin memory) or *Not started*, with **Continue** /
+  **Start reading** and **Pin** (pinning starts at the chapter you reached).
 
-× hides it on that page; Settings → *Show where you are on manga pages* turns it off. It lives in a closed
+The chapter to continue with comes from what Shiori knows, else from the series page's own chapter links
+(and the chapter data some sites embed), looked at again a moment later for lists that load late.
+× hides it on that page; ☰ → **Settings** turns it on/off and sets its theme (system / dark / light) and
+accent colour, with a live preview. Folder names are set on the same page. It lives in a closed
 shadow root in the extension's isolated world: the page can't read your progress from it or restyle it,
 and its only action, Pin, can only pin the tab it is on.
 

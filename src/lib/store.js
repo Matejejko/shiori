@@ -26,6 +26,8 @@ export const DEFAULT_CFG = {
   releaseChecks: true,
   releaseFolder: 1,    // folder whose series get release checks
   pageIndicator: true, // the reading indicator on manga pages (bottom right)
+  indicatorTheme: 'auto', // auto (follows the system) | light | dark
+  indicatorAccent: '#c2410c',
 };
 
 export class Store {

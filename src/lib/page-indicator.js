@@ -4,7 +4,14 @@
 // renders into a closed shadow root (the page can't read your progress from it or restyle it),
 // sets text only (never HTML), and its one action — Pin — asks the background to pin this tab.
 
-/** @param {null | {state:'pinned'|'seen'|'new', read:number|null, latest?:number|null, here:number|null, nextChap?:number|null, nextUrl?:string|null}} info */
+/**
+ * @param {null | {state:'pinned'|'seen'|'new', read:number|null, latest?:number|null, here:number|null,
+ *   nextChap?:number|null, nextUrl?:string|null, theme?:'auto'|'light'|'dark', accent?:string, preview?:boolean}} info
+ *   preview: Settings shows it on the extension page: buttons do nothing.
+ */
+/** Accent choices in Settings: all dark enough for white button text (contrast ≥ 4.5:1). */
+export const INDICATOR_ACCENTS = [['Orange', '#c2410c'], ['Red', '#b91c1c'], ['Pink', '#be185d'], ['Purple', '#7c3aed'], ['Blue', '#2563eb'], ['Teal', '#0f766e'], ['Green', '#15803d']];
+
 export function renderPageIndicator(info) {
   const st = globalThis.__shioriIndicator || (globalThis.__shioriIndicator = {});
   if (!info || st.closedOn === location.href) { if (st.host) st.host.remove(); return; }
@@ -18,25 +25,27 @@ export function renderPageIndicator(info) {
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const ch = (n) => String(n);
 
+  // your colours (Settings): a theme and an accent; accents are dark enough for white button text
+  const accent = /^#[0-9a-f]{6}$/i.test(info.accent || '') ? info.accent : '#c2410c';
+  const dark = `.box { --bg: #22201d; --ink: #ece8e1; --ink2: #a39d93; --line: #37332e; --hover: rgba(255,255,255,.08); --shadow: rgba(0,0,0,.5); }`;
   const style = el('style');
   style.textContent = `
     :host { all: initial; }
-    .box { position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; display: flex; align-items: center; gap: 10px;
+    .box { --bg: #ffffff; --ink: #1f1d1a; --ink2: #6b665e; --line: #e3ded6; --hover: rgba(0,0,0,.06); --shadow: rgba(0,0,0,.18); --ac: ${accent};
+      position: fixed; right: 16px; bottom: 16px; z-index: 2147483647; display: flex; align-items: center; gap: 10px;
       padding: 8px 8px 8px 10px; border-radius: 12px; font: 500 13px/1.3 system-ui, -apple-system, "Segoe UI", sans-serif;
-      background: #ffffff; color: #1f1d1a; border: 1px solid #e3ded6; box-shadow: 0 6px 24px rgba(0,0,0,.18); max-width: calc(100vw - 32px); }
-    .mark { width: 10px; height: 16px; background: #c2410c; clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%); flex: none; }
+      background: var(--bg); color: var(--ink); border: 1px solid var(--line); box-shadow: 0 6px 24px var(--shadow); max-width: calc(100vw - 32px); }
+    ${info.theme === 'dark' ? dark : info.theme === 'light' ? '' : `@media (prefers-color-scheme: dark) { ${dark} }`}
+    .mark { width: 10px; height: 16px; background: var(--ac); clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 75%, 0 100%); flex: none; }
     .txt { display: flex; flex-direction: column; min-width: 0; }
-    .lbl { font-size: 11px; color: #6b665e; }
+    .lbl { font-size: 11px; color: var(--ink2); }
     .main { font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .of { font-weight: 500; color: #6b665e; }
-    .btn { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 8px; background: #c2410c; color: #fff; font-weight: 650; white-space: nowrap; }
-    .btn:focus-visible, .x:focus-visible { outline: 2px solid #c2410c; outline-offset: 2px; }
-    .x { all: unset; cursor: pointer; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: #6b665e; font-size: 15px; }
-    .x:hover { background: rgba(0,0,0,.06); }
-    @media (prefers-color-scheme: dark) {
-      .box { background: #22201d; color: #ece8e1; border-color: #37332e; box-shadow: 0 6px 24px rgba(0,0,0,.5); }
-      .lbl, .of, .x { color: #a39d93; } .mark { background: #ea580c; } .btn { background: #f97316; color: #1b1209; } .x:hover { background: rgba(255,255,255,.08); }
-    }`;
+    .of { font-weight: 500; color: var(--ink2); }
+    .btn { all: unset; cursor: pointer; padding: 6px 10px; border-radius: 8px; background: var(--ac); color: #fff; font-weight: 650; white-space: nowrap; }
+    .btn.ghost { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--line); }
+    .btn:focus-visible, .x:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+    .x { all: unset; cursor: pointer; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 6px; color: var(--ink2); font-size: 15px; }
+    .x:hover, .btn.ghost:hover { background: var(--hover); }`;
 
   const box = el('div', 'box');
   box.setAttribute('role', 'status');
@@ -54,17 +63,22 @@ export function renderPageIndicator(info) {
   txt.append(main);
   box.append(el('span', 'mark'), txt);
 
-  if (info.state === 'pinned' && has(info.nextChap) && typeof info.nextUrl === 'string' && /^https?:\/\//i.test(info.nextUrl) && (!has(info.here) || info.nextChap > info.here)) {
-    const a = el('a', 'btn', `Continue ch ${ch(info.nextChap)}`);
+  // Continue (or Start reading) wherever the chapter is known — pinned or not
+  if (has(info.nextChap) && typeof info.nextUrl === 'string' && /^https?:\/\//i.test(info.nextUrl) && (!has(info.here) || info.nextChap > info.here)) {
+    const started = has(info.read) || has(info.here);
+    const a = el('a', info.state === 'pinned' ? 'btn' : 'btn ghost', `${started ? 'Continue' : 'Start reading'} ch ${ch(info.nextChap)}`);
     a.href = info.nextUrl;
     a.dataset.act = 'continue';
+    if (info.preview) a.addEventListener('click', (ev) => ev.preventDefault());
     box.append(a);
-  } else if (info.state !== 'pinned') {
+  }
+  if (info.state !== 'pinned') {
     const b = el('button', 'btn', 'Pin');
     b.type = 'button';
     b.dataset.act = 'pin';
     b.title = has(info.read) ? `Add to Shiori, starting at chapter ${ch(info.read)}` : 'Add to Shiori';
     b.addEventListener('click', () => {
+      if (info.preview) return;
       b.textContent = 'Pinning…';
       b.disabled = true;
       chrome.runtime.sendMessage({ type: 'pinFromPage' }).then((r) => { if (!r || !r.ok) b.textContent = 'Pin failed'; }, () => { b.textContent = 'Pin failed'; });
@@ -75,7 +89,7 @@ export function renderPageIndicator(info) {
   x.type = 'button';
   x.dataset.act = 'close';
   x.setAttribute('aria-label', 'Hide the Shiori indicator on this page');
-  x.addEventListener('click', () => { st.closedOn = location.href; st.host.remove(); });
+  x.addEventListener('click', () => { if (info.preview) return; st.closedOn = location.href; st.host.remove(); });
   box.append(x);
 
   st.root.replaceChildren(style, box);

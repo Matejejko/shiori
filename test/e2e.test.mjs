@@ -163,7 +163,7 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
       .replace('<body>', '<body><nav><a href="/genres/romance/">Romance</a><a href="/genres/horror/">Horror</a></nav><div class="mgen"><a href="/genres/action/">Action</a><a href="/genres/fantasy/">Fantasy</a><a href="/genres/xyz/">Not a genre</a></div>');
     await ctx.route('https://arenascan.com/**', (route) => {
       const u = new URL(route.request().url());
-      if (u.pathname === '/manga/e2e-seen/') return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Seen</title><h1>Seen Series</h1>' });
+      if (u.pathname === '/manga/e2e-seen/') return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>Seen</title><h1>Seen Series</h1><a href="/e2e-seen-chapter-25/">25</a><a href="/e2e-seen-chapter-24/">24</a><a href="/e2e-seen-chapter-23/">23</a>' });
       if (u.pathname === '/manga/e2e-pin-test/') return route.fulfill({ status: 200, contentType: 'text/html', body: seriesHtml });
       if (/chapter-\d+\/$/.test(u.pathname)) return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>chapter</title><h1>Chapter</h1>' });
       return route.fulfill({ status: 404, body: '' });
@@ -265,11 +265,11 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     } }))[0].result, rdTab);
     let shown = null;
     for (let i = 0; i < 50 && !/Read up to ch 23/.test(shown || ''); i++) { shown = await readIndicator(); await new Promise((r) => setTimeout(r, 100)); }
-    assert.match(shown, /not pinned.*Read up to ch 23.*Pin/);
+    assert.match(shown, /not pinned.*Read up to ch 23.*Continue ch 24.*Pin/); // the next chapter comes from the page's own links
     assert.equal(await rd.evaluate(() => document.documentElement.textContent.includes('Read up to ch')), false, 'the page cannot read the indicator');
     await sw.evaluate(async (id) => chrome.scripting.executeScript({ target: { tabId: id }, func: () => globalThis.__shioriIndicator.click('pin') }), rdTab); // pin from the page
     for (let i = 0; i < 50 && !/read up toChapter 23/.test(shown || ''); i++) { shown = await readIndicator(); await new Promise((r) => setTimeout(r, 100)); }
-    assert.match(shown, /Shiori · read up toChapter 23/);
+    assert.match(shown, /Shiori · read up toChapter 23.*Continue ch 24/);
     const pr = await sw.evaluate((id) => self.shiori.handlers.pin({ tabId: id }), rdTab); // already pinned now
     const seenEntry = await sw.evaluate(async (id) => self.shiori.store.getEntry(id), pr.id);
     assert.equal(seenEntry.progress.chap, 23);
@@ -353,6 +353,23 @@ test('e2e: extension in headless Chromium', { skip: !pw && 'playwright not insta
     assert.match(after, /^local:\d+:[0-9a-f]{32}\.webp$/);
     assert.equal(after, r.key);
     assert.notEqual(after, before);
+  });
+
+  await t.test('Settings: reading indicator on/off, theme and accent, with a preview here', async () => {
+    await app.click('#openSettings'); await app.click('#menu button[data-tab=prefs]');
+    await app.waitForFunction(() => globalThis.__shioriIndicator?.host?.isConnected);
+    assert.match(await app.evaluate(() => globalThis.__shioriIndicator.text()), /Chapter 22 of 40.*Continue ch 23/);
+    await app.check('#prefs input[name=indicatorTheme][value=dark]');
+    await app.check('#prefs input[name=indicatorAccent][value="#2563eb"]');
+    await app.waitForFunction(() => document.querySelector('#prefsMsg')?.textContent === 'Saved.');
+    const cfg = await sw.evaluate(async () => (await self.shiori.store.getConfig()));
+    assert.deepEqual([cfg.indicatorTheme, cfg.indicatorAccent, cfg.pageIndicator], ['dark', '#2563eb', true]);
+    assert.equal(await app.$$eval('.labels .card[data-kind=folder] .rows .row', (r) => r.length) >= 5, true, 'folder names live here now');
+    await app.uncheck('#prefs input[name=pageIndicator]');
+    await app.waitForFunction(() => !globalThis.__shioriIndicator?.host?.isConnected);
+    await app.check('#prefs input[name=pageIndicator]');
+    await app.click('#folderTabs button[data-folder=""]');
+    assert.equal(await app.evaluate(() => !!globalThis.__shioriIndicator?.host?.isConnected), false, 'the preview leaves with Settings');
   });
 
   await t.test('the reading log counted the chapters read in this session', async () => {

@@ -3,6 +3,7 @@ import { formPatch } from '../lib/library.js';
 import { bytesToB64 } from '../lib/base64.js';
 import { DEFAULT_LABELS, KNOWN_TAGS, tagKey } from '../lib/labels.js';
 import { computeStats, computeReading, MIN_PER_CHAPTER } from '../lib/stats.js';
+import { renderPageIndicator, INDICATOR_ACCENTS } from '../lib/page-indicator.js';
 
 const $ = (id) => document.getElementById(id);
 const state = { lib: null, covers: {}, st: null, folder: '' };
@@ -10,7 +11,7 @@ const state = { lib: null, covers: {}, st: null, folder: '' };
 // ---------------------------------------------------------------------------------------
 // tabs
 
-const SETTINGS_PAGES = ['stats', 'settings', 'io', 'labels'];
+const SETTINGS_PAGES = ['stats', 'settings', 'io', 'prefs'];
 /** name: 'library' (folder tabs) or a settings page; folder: '' = all, else the folder number */
 function showTab(name, folder) {
   if (!SETTINGS_PAGES.includes(name)) name = 'library';
@@ -28,7 +29,8 @@ function showTab(name, folder) {
   try { localStorage.setItem('shiori.tab', name); localStorage.setItem('shiori.folder', state.folder); } catch { /* ignore */ }
   if (name === 'library' && state.lib) renderGrid();
   if (name === 'settings') renderSettings();
-  if (name === 'labels') renderLabels();
+  if (name === 'prefs') { renderPrefs(); renderLabels(); }
+  if (name !== 'prefs') renderPageIndicator(null); // the preview belongs to Settings only
   if (name === 'stats') renderStats();
 }
 $('folderTabs').addEventListener('click', (ev) => { const b = ev.target.closest('.tab'); if (b) showTab('library', b.dataset.folder); });
@@ -527,7 +529,6 @@ async function renderSettings() {
   form.token.placeholder = st.hasToken ? '(saved — leave empty to keep)' : 'paste app token';
   form.autoSync.checked = !!st.cfg.autoSync;
   form.releaseChecks.checked = !!st.cfg.releaseChecks;
-  form.pageIndicator.checked = st.cfg.pageIndicator !== false;
   if (state.lib) {
     clear(form.releaseFolder).append(...knownKeys('folder').map((v) => h('option', { value: v, text: labelFor('folder', v), selected: v === st.cfg.releaseFolder })));
   }
@@ -549,7 +550,7 @@ async function renderSettings() {
 function formCfg() {
   const form = $('settings');
   return {
-    cfg: { davUrl: form.davUrl.value.trim(), user: form.user.value.trim(), autoSync: form.autoSync.checked, releaseChecks: form.releaseChecks.checked, pageIndicator: form.pageIndicator.checked, releaseFolder: Number(form.releaseFolder.value) || 1 },
+    cfg: { davUrl: form.davUrl.value.trim(), user: form.user.value.trim(), autoSync: form.autoSync.checked, releaseChecks: form.releaseChecks.checked, releaseFolder: Number(form.releaseFolder.value) || 1 },
     token: form.token.value,
   };
 }
@@ -584,6 +585,39 @@ $('test').addEventListener('click', async () => {
 $('grantHosts').addEventListener('click', async () => {
   try { await api.permissions.request({ origins: ['<all_urls>'] }); } catch { /* user said no */ }
   renderSettings();
+});
+
+// ---------------------------------------------------------------------------------------
+// settings: the reading indicator (saved on every change; previewed in this page's corner)
+
+const prefsForm = () => $('prefs');
+function previewIndicator() {
+  const cfg = state.st?.cfg || {};
+  renderPageIndicator(cfg.pageIndicator === false ? null : { state: 'pinned', read: 22, latest: 40, here: null, nextChap: 23, nextUrl: 'https://example.org/', theme: cfg.indicatorTheme, accent: cfg.indicatorAccent, preview: true });
+}
+function renderPrefs() {
+  if (!state.st) return;
+  const f = prefsForm(), cfg = state.st.cfg;
+  f.pageIndicator.checked = cfg.pageIndicator !== false;
+  for (const r of f.querySelectorAll('input[name=indicatorTheme]')) r.checked = r.value === (cfg.indicatorTheme || 'auto');
+  const sw = f.querySelector('.swatches');
+  for (const old of sw.querySelectorAll('label')) old.remove();
+  for (const [name, hex] of INDICATOR_ACCENTS) {
+    const input = h('input', { type: 'radio', name: 'indicatorAccent', value: hex, checked: hex === (cfg.indicatorAccent || '#c2410c'), attrs: { 'aria-label': name } });
+    const dot = h('span', { class: 'swatch', attrs: { title: name } });
+    dot.style.background = hex;
+    sw.append(h('label', { class: 'check' }, input, dot));
+  }
+  previewIndicator();
+}
+prefsForm().addEventListener('change', async () => {
+  const f = prefsForm();
+  const prefs = { pageIndicator: f.pageIndicator.checked, indicatorTheme: f.querySelector('input[name=indicatorTheme]:checked')?.value, indicatorAccent: f.querySelector('input[name=indicatorAccent]:checked')?.value };
+  try {
+    state.st.cfg = (await send('savePrefs', { prefs })).cfg;
+    $('prefsMsg').textContent = 'Saved.'; $('prefsMsg').className = 'small ok-text';
+  } catch (e) { $('prefsMsg').textContent = e.message; $('prefsMsg').className = 'small err-text'; }
+  previewIndicator();
 });
 
 // ---------------------------------------------------------------------------------------
